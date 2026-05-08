@@ -407,11 +407,11 @@ export async function POST(request: NextRequest) {
 
       persistentHistory.push({ role: "user", content: aiUserContent });
 
-      // ─── 6+7) Dispatch to the right context handler
-      const latestUserText =
-        typeof aiUserContent === "string" ? aiUserContent : "";
+      // ─── 6+7) Dispatch to the right context handler. dispatchContext
+      // tracks which agent ultimately answered (after any brand→handoff).
+      let dispatchContext: ContextKey = targetContext;
 
-      if (targetContext === "goods") {
+      if (dispatchContext === "goods") {
         const r = await handleGoods({
           phone,
           identity,
@@ -421,7 +421,7 @@ export async function POST(request: NextRequest) {
         aiReply = r.reply;
         aiToolNames = r.toolCallNames;
         renderFollowups = r.render;
-      } else if (targetContext === "brand") {
+      } else if (dispatchContext === "brand") {
         const r = await handleBrand({
           phone,
           identity: {
@@ -429,14 +429,45 @@ export async function POST(request: NextRequest) {
             displayName: identity.displayName,
           },
           history: persistentHistory,
-          latestUserText,
-          route,
           isFirstContact,
         });
-        aiReply = r.reply;
-        aiToolNames = r.toolCallNames;
-        renderFollowups = r.render;
-      } else if (targetContext === "escrow") {
+
+        if (r.kind === "handoff") {
+          // Brand decided this belongs to goods/escrow — re-dispatch the
+          // user's message to that agent. The user only sees the target
+          // agent's reply, which is what they actually wanted.
+          dispatchContext = r.target;
+          await setActiveContext(phone, r.target, "brand_handoff");
+          console.log(
+            `[webhook] brand → handoff → ${r.target} (tools=[${r.toolCallNames.join(",")}])`
+          );
+
+          if (r.target === "goods") {
+            const g = await handleGoods({
+              phone,
+              identity,
+              history: persistentHistory,
+              isFirstContact,
+            });
+            aiReply = g.reply;
+            aiToolNames = [...r.toolCallNames, ...g.toolCallNames];
+            renderFollowups = g.render;
+          } else if (r.target === "escrow") {
+            const e = await handleEscrow({
+              phone,
+              history: persistentHistory,
+              isFirstContact,
+            });
+            aiReply = e.reply;
+            aiToolNames = [...r.toolCallNames, ...e.toolCallNames];
+            renderFollowups = e.render;
+          }
+        } else {
+          aiReply = r.reply;
+          aiToolNames = r.toolCallNames;
+          renderFollowups = r.render;
+        }
+      } else if (dispatchContext === "escrow") {
         const r = await handleEscrow({
           phone,
           history: persistentHistory,

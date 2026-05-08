@@ -1,37 +1,46 @@
 // ============================================================================
 // Brand context handler.
 //
-// This is the front-of-house concierge that handles:
-//   - First-contact greetings ("hi", "good morning")
-//   - Generic GSG questions ("what do you do?", "where are you located?")
-//   - Soft routing to other contexts ("I want to shop" → tells goods to take over)
-//   - Sending the main menu (List Message of all 6 business units)
-//   - Sending CTA links to business units that don't have a native agent
+// Brand is the front-of-house concierge. Its job:
+//   - Welcome cold inbounds (only on first contact — no re-welcoming!)
+//   - Route to the right specialist agent the moment intent is clear
+//   - Send CTA links for services without native agents
+//   - Field genuine brand-level FAQs (hours, services overview, contacts)
 //
-// No database tools. Pure LLM + rendered CTAs.
-//
-// Returns the same shape every context returns:
-//   { reply, render, toolCallNames }
-// where `render` is a 0-arg async fn already bound to the phone, so the
-// webhook just needs to await it after sending the text reply.
+// On every message the brand LLM either:
+//   (a) calls route_to(target) → we return { kind: "handoff", target } so the
+//       webhook can re-dispatch the user's message to the target agent
+//       (no brand text is sent — the target agent's reply is what the user sees)
+//   (b) calls send_business_unit_link(unit) / show_main_menu() and replies with
+//       a one-line intro
+//   (c) just replies with text (the FAQ / general-question path)
 // ============================================================================
 
-import { runAIPlain, type AIMessage } from "@/lib/ai";
+import {
+  runAIWithGenericTools,
+  type AIMessage,
+} from "@/lib/ai";
 import { buildBrandSystemPrompt } from "./system-prompt";
 import {
   renderBrandHints,
   type BrandRenderHint,
 } from "./renderer";
-import { BUSINESS_UNITS, detectIntent } from "./knowledge";
-import type { RouteDecision } from "@/lib/intent-router";
+import { BUSINESS_UNITS } from "./knowledge";
+import { BRAND_TOOLS } from "./llm-tools";
+import type { ContextKey } from "@/lib/context-state";
 
-export type BrandHandleResult = {
-  reply: string;
-  /** Already-bound to phone — caller just awaits it after sending the text reply */
-  render: () => Promise<void>;
-  /** For telemetry/persistence (logged as "intent" on chat_conversations) */
-  toolCallNames: string[];
-};
+export type BrandHandleResult =
+  | {
+      kind: "reply";
+      reply: string;
+      render: () => Promise<void>;
+      toolCallNames: string[];
+    }
+  | {
+      kind: "handoff";
+      target: ContextKey;
+      toolCallNames: string[];
+    };
 
 type BrandIdentity = {
   isKnown: boolean;
@@ -41,45 +50,117 @@ type BrandIdentity = {
 export async function handleBrand(opts: {
   phone: string;
   identity: BrandIdentity;
-  /** Last ~18 turns, latest user message included */
   history: AIMessage[];
-  /** The just-arrived plain-text from the customer (for renderer hint detection) */
-  latestUserText: string;
-  /** Decision from the intent router (so the renderer knows when to also send a CTA) */
-  route: RouteDecision;
   isFirstContact: boolean;
 }): Promise<BrandHandleResult> {
-  // Build the prompt + run a plain-chat LLM call (no tools)
-  const systemPrompt = buildBrandSystemPrompt({ identity: opts.identity });
-  const { reply } = await runAIPlain({
-    systemPrompt,
-    history: opts.history,
+  const systemPrompt = buildBrandSystemPrompt({
+    identity: opts.identity,
+    isFirstContact: opts.isFirstContact,
   });
 
-  // Decide which renderer hints to attach AFTER the text reply.
-  const hints: BrandRenderHint[] = [];
+  // Tool dispatcher captures handoff intent and produces render hints.
+  let handoffTarget: ContextKey | null = null;
+  const collectedHints: BrandRenderHint[] = [];
 
-  // 1. If the user explicitly asked for the menu, always show it.
-  if (opts.route.reason === "explicit_menu") {
-    hints.push({ kind: "menu" });
-  }
+  type ExecResult = {
+    llm: string;
+    hint: BrandRenderHint | { kind: "none" };
+  };
 
-  // 2. If the user's intent matched a business unit that has NO native agent,
-  //    attach a CTA so they can open that website with one tap.
-  //    (For units WITH a native agent — goods/escrow — the router would have
-  //    sent the message to that context instead. So if we're in brand, the
-  //    intent must be one of the link-only units.)
-  const intent = detectIntent(opts.latestUserText);
-  if (intent && !intent.hasAgent) {
-    hints.push({ kind: "cta", unit: intent });
+  const executor = async (name: string, argsJson: string): Promise<ExecResult> => {
+    let args: Record<string, unknown> = {};
+    try {
+      args = argsJson ? JSON.parse(argsJson) : {};
+    } catch {
+      /* ignore */
+    }
+
+    if (name === "route_to") {
+      const target = String(args.target || "").toLowerCase() as ContextKey;
+      if (target === "goods" || target === "escrow") {
+        handoffTarget = target;
+        return {
+          llm: JSON.stringify({
+            ok: true,
+            note: `The conversation is being handed off to the ${target} agent. Reply with an empty string '' — the next message the user sees will come from the ${target} agent.`,
+          }),
+          hint: { kind: "none" },
+        };
+      }
+      return {
+        llm: JSON.stringify({ error: "invalid_target", got: target }),
+        hint: { kind: "none" },
+      };
+    }
+
+    if (name === "send_business_unit_link") {
+      const unitKey = String(args.unit || "").toLowerCase();
+      const unit = BUSINESS_UNITS.find((u) => u.key === unitKey);
+      if (!unit) {
+        return {
+          llm: JSON.stringify({ error: "unknown_unit", got: unitKey }),
+          hint: { kind: "none" },
+        };
+      }
+      const hint: BrandRenderHint = { kind: "cta", unit };
+      collectedHints.push(hint);
+      return {
+        llm: JSON.stringify({
+          ok: true,
+          unit: unit.title,
+          url: unit.url,
+          note: "A tappable CTA button is being sent to the customer. Your text reply should be ONE short intro line — don't repeat the URL.",
+        }),
+        hint: { kind: "none" },
+      };
+    }
+
+    if (name === "show_main_menu") {
+      const hint: BrandRenderHint = { kind: "menu" };
+      collectedHints.push(hint);
+      return {
+        llm: JSON.stringify({
+          ok: true,
+          note: "The full services menu has been queued as a List Message. Your text reply should be ONE short intro line.",
+        }),
+        hint: { kind: "none" },
+      };
+    }
+
+    return {
+      llm: JSON.stringify({ error: "unknown_tool", name }),
+      hint: { kind: "none" },
+    };
+  };
+
+  const result = await runAIWithGenericTools<BrandRenderHint>({
+    systemPrompt,
+    history: opts.history,
+    tools: BRAND_TOOLS,
+    executor,
+    temperature: 0.6,
+    maxRounds: 3,
+  });
+
+  // If brand decided to hand off, signal the webhook — its text is discarded.
+  if (handoffTarget) {
+    return {
+      kind: "handoff",
+      target: handoffTarget,
+      toolCallNames: result.toolCallNames,
+    };
   }
 
   return {
-    reply,
-    render: async () => renderBrandHints(opts.phone, hints),
-    toolCallNames: hints.length > 0 ? [`brand:${hints.map((h) => h.kind).join("+")}`] : ["brand:chat"],
+    kind: "reply",
+    reply: result.reply,
+    render: async () => renderBrandHints(opts.phone, collectedHints),
+    toolCallNames:
+      result.toolCallNames.length > 0
+        ? result.toolCallNames.map((n) => `brand:${n}`)
+        : ["brand:chat"],
   };
 }
 
-// Re-export so the webhook can introspect what business units exist (e.g. for telemetry).
+// Re-export so the webhook can introspect the unit list (for telemetry).
 export { BUSINESS_UNITS };
