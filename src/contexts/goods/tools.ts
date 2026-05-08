@@ -631,7 +631,9 @@ export async function trackOrder(
 
   const db = gsgAdminDb();
 
-  // 1) Authoritative lookup via the RPC (returns null if email doesn't match)
+  // The RPC returns a TABLE — 0 rows when the order doesn't exist, otherwise
+  // 1 row with email_match/exists_flag flags so we can branch without doing
+  // a second "does this exist?" query.
   const { data, error } = await db.rpc("get_order_for_tracking", {
     p_order_number: term,
     p_email: mail,
@@ -639,77 +641,62 @@ export async function trackOrder(
 
   if (error) {
     console.error("[gsg-tools] trackOrder RPC error:", error.message);
+    return { status: "not_found" };
   }
 
-  if (data && typeof data === "object") {
-    const o = data as {
-      id: string;
-      order_number: string;
-      status: string;
-      payment_status: string;
-      total: number | string;
-      created_at: string;
-      metadata: Record<string, unknown> | null;
-      order_items: Array<{
-        product_name: string;
-        variant_name: string | null;
-        quantity: number;
-        unit_price: number | string;
-        metadata: { image?: string | null } | null;
-      }>;
-    };
-    return {
-      status: "found",
-      order: {
-        id: o.id,
-        order_number: o.order_number,
-        status: o.status,
-        payment_status: o.payment_status,
-        total: Number(o.total),
-        currency: "GHS",
-        created_at: o.created_at,
-        tracking_number:
-          (o.metadata?.tracking_number as string | undefined) ?? null,
-        items: (o.order_items ?? []).map((i) => ({
-          name: i.product_name,
-          variant: i.variant_name,
-          quantity: i.quantity,
-          unit_price: Number(i.unit_price),
-          image: i.metadata?.image ?? null,
-        })),
-      },
-    };
+  type Row = {
+    id: string;
+    order_number: string;
+    status: string;
+    payment_status: string;
+    total: number | string | null;
+    currency: string | null;
+    created_at: string;
+    tracking_number: string | null;
+    email_match: boolean;
+    exists_flag: boolean;
+    items: Array<{
+      name: string;
+      variant: string | null;
+      quantity: number;
+      unit_price: number | string;
+      image: string | null;
+    }> | null;
+  };
+
+  const row = Array.isArray(data) && data.length > 0 ? (data[0] as Row) : null;
+
+  // No row at all → order doesn't exist (RPC didn't find it by order_number
+  // or by metadata.tracking_number).
+  if (!row || !row.exists_flag) {
+    return { status: "not_found" };
   }
 
-  // 2) RPC returned nothing — could be "wrong email" or "not found at all".
-  // Do an existence check (no email guard) so we can give a useful message.
-  // Match either order_number OR metadata.tracking_number.
-  const { data: existsByNum } = await db
-    .from("orders")
-    .select("order_number")
-    .eq("order_number", term)
-    .limit(1)
-    .maybeSingle();
-
-  if (existsByNum) {
-    return { status: "wrong_email", orderNumberOnFile: existsByNum.order_number };
+  // Order exists but the supplied email doesn't match — PII guard.
+  if (!row.email_match) {
+    return { status: "wrong_email", orderNumberOnFile: row.order_number };
   }
 
-  const { data: existsByTrack } = await db
-    .from("orders")
-    .select("order_number")
-    .filter("metadata->>tracking_number", "eq", term)
-    .limit(1)
-    .maybeSingle();
-
-  if (existsByTrack) {
-    return {
-      status: "wrong_email",
-      orderNumberOnFile: existsByTrack.order_number,
-    };
-  }
-
-  return { status: "not_found" };
+  return {
+    status: "found",
+    order: {
+      id: row.id,
+      order_number: row.order_number,
+      status: row.status,
+      payment_status: row.payment_status,
+      total: Number(row.total ?? 0),
+      currency: row.currency ?? "GHS",
+      created_at: row.created_at,
+      tracking_number: row.tracking_number,
+      items: (row.items ?? []).map((i) => ({
+        name: i.name,
+        variant: i.variant,
+        quantity: i.quantity,
+        unit_price: Number(i.unit_price),
+        image: i.image ?? null,
+      })),
+    },
+  };
 }
 
 // ============================================================================
