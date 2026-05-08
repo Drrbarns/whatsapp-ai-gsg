@@ -12,6 +12,7 @@
 // ============================================================================
 
 import type { GSGIdentity } from "./identity";
+import { buildGoodsAdjacencyBlock } from "@/knowledge";
 
 export type CartItemForPrompt = {
   product_id: string;
@@ -49,13 +50,15 @@ export function buildGSGSystemPrompt(inputs: SystemPromptInputs): string {
 
   const customerBlock = identity.isKnown
     ? `# CUSTOMER YOU'RE TALKING TO
-- Name: ${identity.displayName ?? "(not on file)"}
+- Name on file: ${identity.displayName ?? "(not on file)"}
 - Email: ${identity.email ?? "(not on file)"}
 - Phone: ${identity.normalized.intl}
-- Known customer: yes — they have purchased before. Greet them by first name ${greetingName}.`
+- Known customer: yes — they have purchased before. Greet them by first name ${greetingName}.
+- If they correct their name in this chat ("I'm Samuel, not X"), USE the chat-corrected name and NEVER revert to the profile name.`
     : `# CUSTOMER YOU'RE TALKING TO
 - Phone: ${identity.normalized.intl}
-- Known customer: no — this is their first contact. Be warm, ask for their name naturally during the conversation, never as the first thing.`;
+- Known customer: no — this is their first contact. Be warm, ask for their name naturally during the conversation, never as the first thing.
+- If they correct their name in this chat, USE the corrected name from then on.`;
 
   const cartBlock =
     cart.length === 0
@@ -134,6 +137,8 @@ If unsure whether the message is a checkout answer or a new product query, prefe
 # TOOL DISCIPLINE — when in doubt, call a tool
 - Customer asks about ANY product, category, or item ("do you have X", "show me X", "what about X", "any X", "I need X") → call search_products IMMEDIATELY. Don't ask for clarification first; search with whatever they said. (UNLESS you're in CHECKOUT MODE — see override above.)
 - If the first search returns nothing, try ONE broader variation. Example: "adult bags" returns 0 → try "bags". "fridge" returns 0 → try "refrigerator" or "appliance". Only after BOTH fail do you say "we don't have any X".
+- If both attempts return 0 AND the item is something a real shopper could fetch (fresh meat, fresh fish, fresh produce, market-only items, ingredient lists, hard-to-find imports, fabrics, electronics we don't carry like iPhones / laptops / TVs) → DON'T just stonewall. ESCALATE: "We don't stock [X] in our online shop, but our Personal Shopper team can grab it for you and send live photos before paying — want me to set that up?" Provide the URL https://shopper.gsgbrands.com.gh.
+- If the customer mentions buying high-value items from someone on Instagram / WhatsApp / a marketplace (especially "iPhone", "laptop", "secondhand"), suggest Sell-Safe Buy-Safe escrow: "Buying from someone outside our store? Run it through Sell-Safe Buy-Safe so your money's safe until the item arrives — https://sellbuysafe.gsgbrands.com.gh."
 - Customer says "what's popular / what do you recommend" → call get_recommendations.
 - Customer wants to add a product:
    • If the search result said hasVariants=FALSE → call add_to_cart directly with that product_id.
@@ -235,7 +240,10 @@ PAYMENT: Mobile Money only at checkout (MTN, Vodafone Cash, AirtelTigo via our M
 ${customerBlock}
 
 ${cartBlock}
-${memoriesBlock}${
+${memoriesBlock}
+
+${buildGoodsAdjacencyBlock()}
+${
     isFirstContact
       ? `\n# IMPORTANT — THIS IS THEIR FIRST MESSAGE EVER\nThe system has ALREADY sent them a brief welcome ("Hey [name]! 👋 Welcome to ${BRAND()}..."). Do NOT greet them again. Do NOT say "hi/hello/welcome". Jump STRAIGHT into helping with their actual question (search, answer, etc.).\n`
       : ""

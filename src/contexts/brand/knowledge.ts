@@ -158,46 +158,16 @@ export function detectIntent(message: string): BusinessUnit | null {
   return best?.unit ?? null;
 }
 
-// ─── Company facts ──────────────────────────────────────────────────────────
+// ─── Company facts + FAQs are now in the unified knowledge module.
+//
+// Re-exported here for any legacy imports — but new code should import
+// directly from "@/knowledge".
+export { COMPANY, COMPANY_PILLARS } from "@/knowledge";
 
-export const COMPANY = {
-  name: "GSG Brands",
-  tagline: "Convenience Goods & More",
-  whatsapp: "+233 (0) 246 033 792",
-  whatsappSecondary: "+233 (0) 579 033 792",
-  email: "info@gsgbrands.com.gh",
-  telegram: "@gsgbrandsgh",
-  instagram: "@gsgbrandsgh",
-  twitter: "@gsgbrandsgh",
-  tiktok: "@gsgbrandsgh",
-  homepage: "https://www.gsgbrands.com.gh",
-  hours: "Customer support: Mon–Sat, 8am–8pm GMT. WhatsApp: 24/7.",
-  coverage: "All regions of Ghana. Logistics hubs in Accra, Kumasi, Takoradi.",
-} as const;
-
-export const COMPANY_PILLARS = [
-  {
-    title: "Trust & Security",
-    blurb: "Verified services and secure transactions for peace of mind.",
-  },
-  {
-    title: "Speed & Efficiency",
-    blurb: "Quick delivery and responsive service when you need it.",
-  },
-  {
-    title: "Value for Money",
-    blurb: "Competitive pricing and quality products that save you money.",
-  },
-  {
-    title: "Customer Care",
-    blurb: "24/7 support through WhatsApp, Telegram, and phone.",
-  },
-];
-
-// ─── FAQs (mirrored from gsg/src/lib/askFaqs.ts) ────────────────────────────
-// These get dropped into the system prompt so the AI can field FAQ-style
-// questions immediately without needing to call any tools.
-
+/**
+ * Compact FAQ list (kept here for any caller that still uses it; the brand
+ * system prompt now pulls verbatim phrasing from the unified knowledge files).
+ */
 export const FAQS: Array<{ q: string; a: string }> = [
   {
     q: "What services does GSG Brands offer?",
@@ -205,11 +175,11 @@ export const FAQS: Array<{ q: string; a: string }> = [
   },
   {
     q: "How can I contact customer support?",
-    a: "Call +233 (0) 246 033 792 or +233 (0) 579 033 792, WhatsApp either number, Telegram @gsgbrandsgh, or email info@gsgbrands.com.gh.",
+    a: "Call +233 (0) 246 033 792 or +233 (0) 579 033 792, WhatsApp either number, Telegram @gsgbrandsgh, or email info@gsgbrands.com.gh. Extended-hours line: +233 (0) 571 303 716.",
   },
   {
     q: "What are your delivery areas?",
-    a: "We operate across major cities and regions in Ghana and keep expanding coverage. Tell us your exact address and we'll confirm eligibility.",
+    a: "We operate across major cities and regions in Ghana and keep expanding coverage. Logistics hubs in Accra, Kumasi and Takoradi.",
   },
   {
     q: "How do I track my order?",
@@ -218,17 +188,5 @@ export const FAQS: Array<{ q: string; a: string }> = [
   {
     q: "What payment methods do you accept?",
     a: "Mobile Money across all major networks (MTN MoMo, Telecel Cash, AT Money), bank transfer where applicable, and cash on delivery where a service permits.",
-  },
-  {
-    q: "How does Personal Shopping work?",
-    a: "Tell us what you need; a personal shopper confirms source pricing, substitutions if anything's out of stock, and arranges delivery. We can run anything from a single item to a full market list.",
-  },
-  {
-    q: "Is Sell-Safe Buy-Safe trustworthy?",
-    a: "Yes. SBBS sits between the buyer and seller — the buyer pays us, we hold the money, the seller delivers, the buyer confirms with a code, and only then do we release payment. Disputes go to a human reviewer.",
-  },
-  {
-    q: "How do I join the affiliate programme?",
-    a: "Visit gsgbrands.com.gh/affiliates and sign up. We'll set you up with a tracking link and marketing assets.",
   },
 ];
