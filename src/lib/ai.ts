@@ -13,10 +13,18 @@ import OpenAI from "openai";
 import { GSG_TOOLS } from "@/contexts/goods/llm-tools";
 import { executeToolCall, type RenderHint, type ToolContext } from "@/contexts/goods/tool-executor";
 
-const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+// Lazy client init — instantiating at module load fails Vercel's
+// "Collecting page data" step when env vars aren't yet wired.
+let _openai: OpenAI | null = null;
+function openaiClient(): OpenAI {
+  if (!_openai) {
+    _openai = new OpenAI({
+      baseURL: "https://openrouter.ai/api/v1",
+      apiKey: process.env.OPENROUTER_API_KEY,
+    });
+  }
+  return _openai;
+}
 
 // Multimodal-friendly user content (text + images from WhatsApp vision)
 export type AIContentPart =
@@ -77,7 +85,7 @@ export async function runAIWithTools(opts: {
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     let completion: OpenAI.Chat.Completions.ChatCompletion;
     try {
-      completion = await openai.chat.completions.create({
+      completion = await openaiClient().chat.completions.create({
         model,
         messages,
         tools: GSG_TOOLS,
@@ -182,7 +190,7 @@ export async function runAIWithGenericTools<H>(opts: {
   for (let round = 0; round < maxRounds; round++) {
     let completion: OpenAI.Chat.Completions.ChatCompletion;
     try {
-      completion = await openai.chat.completions.create({
+      completion = await openaiClient().chat.completions.create({
         model,
         messages,
         tools: opts.tools,
@@ -266,7 +274,7 @@ export async function runAIPlain(opts: {
   ];
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await openaiClient().chat.completions.create({
       model,
       messages,
       temperature: opts.temperature ?? 0.6,
