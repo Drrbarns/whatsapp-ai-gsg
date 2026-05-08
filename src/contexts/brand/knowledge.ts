@@ -45,6 +45,11 @@ export const BUSINESS_UNITS: BusinessUnit[] = [
       "do you have", "i need", "i want to buy", "i'm looking for",
       "convenience", "goods", "store", "products", "price of",
       "how much is", "available", "in stock", "order something",
+      // action phrases — anything that signals intent to purchase
+      "place an order", "place order", "make an order", "wanna buy",
+      "want to order", "want to buy", "want to purchase", "want to shop",
+      "i'll buy", "i wanna shop", "let me shop", "lets shop",
+      "checkout", "add to cart", "i'll take", "ill take",
     ],
   },
   {
@@ -68,13 +73,21 @@ export const BUSINESS_UNITS: BusinessUnit[] = [
       "Trusted middleman for informal commerce. Buyer pays us, we hold the money safely, seller delivers, buyer confirms with a code, then we release payment to the seller. If anything goes wrong, open a dispute and a human at GSG arbitrates. Works for any platform — Instagram, WhatsApp, TikTok, Marketplace.",
     hasAgent: true,
     intentKeywords: [
-      "escrow", "sellbuysafe", "sell-safe", "buy-safe", "sbbs", "sbs-",
+      "escrow", "sellbuysafe", "sell buy safe", "sellbuysafe",
+      "sell-safe", "sell safe", "buy-safe", "buy safe",
+      "sbbs", "sbs-",
       "scam", "scammed", "dispute", "refund", "release payment",
       "buyer protection", "seller protection", "release code",
       "delivery code", "transaction id", "transaction status",
       "i was scammed", "instagram seller", "whatsapp seller",
       "is this seller verified", "trust badge", "rider", "dispatch",
       "payout", "kyc", "verify my account",
+      // action phrases — anything that signals intent to start/manage a deal
+      "start a transaction", "start transaction", "new transaction",
+      "begin transaction", "create transaction", "open a transaction",
+      "i want to start", "want to start", "ready to start",
+      "how do i start", "how to start a deal", "make a deal",
+      "secure my payment", "hold my payment", "middleman",
     ],
   },
   {
@@ -120,12 +133,23 @@ export const BUSINESS_UNITS: BusinessUnit[] = [
 /** Find the business unit a free-text message most strongly hints at. */
 export function detectIntent(message: string): BusinessUnit | null {
   if (!message) return null;
-  const low = message.toLowerCase();
+  // Normalize: lowercase, collapse spaces, drop punctuation that splits words
+  // (so "sell-safe", "sell  safe", "sell, safe" all reduce to "sell safe").
+  const norm = message
+    .toLowerCase()
+    .replace(/[-_,.!?;:'"`()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   let best: { unit: BusinessUnit; score: number } | null = null;
   for (const unit of BUSINESS_UNITS) {
     let score = 0;
     for (const kw of unit.intentKeywords) {
-      if (low.includes(kw)) score += kw.length; // longer matches = stronger
+      const kwNorm = kw
+        .toLowerCase()
+        .replace(/[-_,.!?;:'"`()]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (norm.includes(kwNorm)) score += kwNorm.length; // longer matches win
     }
     if (score > 0 && (!best || score > best.score)) {
       best = { unit, score };

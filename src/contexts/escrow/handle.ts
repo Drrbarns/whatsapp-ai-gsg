@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { runAIWithGenericTools, type AIMessage } from "@/lib/ai";
-import { resolveEscrowIdentity } from "./identity";
+import { resolveEscrowIdentity, type EscrowIdentity } from "./identity";
 import { ESCROW_TOOLS } from "./llm-tools";
 import {
   executeEscrowTool,
@@ -22,15 +22,35 @@ export type EscrowHandleResult = {
   toolCallNames: string[];
 };
 
+/** True if the escrow backend isn't configured yet (env vars missing). In
+ * that case we run a lighter version that only exposes the link tool. */
+function escrowBackendAvailable(): boolean {
+  return Boolean(process.env.ESCROW_API_BASE_URL && process.env.ESCROW_WA_API_KEY);
+}
+
 export async function handleEscrow(opts: {
   phone: string;
   history: AIMessage[];
   isFirstContact: boolean;
 }): Promise<EscrowHandleResult> {
-  // Identity is resolved against SBBS's profiles (separate from goods identity)
-  const identity = await resolveEscrowIdentity(opts.phone);
+  const backendOn = escrowBackendAvailable();
 
-  const systemPrompt = buildEscrowSystemPrompt({ identity });
+  // Identity: hit SBBS only if backend is reachable; otherwise fall back to "unknown"
+  const identity: EscrowIdentity = backendOn
+    ? await resolveEscrowIdentity(opts.phone)
+    : { isKnown: false, displayName: null, role: null, profile: null, phone: opts.phone };
+
+  // Tools: in degraded mode, only expose send_sbbs_link (it doesn't need backend).
+  const tools = backendOn
+    ? ESCROW_TOOLS
+    : ESCROW_TOOLS.filter(
+        (t) => t.type === "function" && t.function.name === "send_sbbs_link"
+      );
+
+  const systemPrompt = buildEscrowSystemPrompt({
+    identity,
+    backendDegraded: !backendOn,
+  });
 
   const ctx: EscrowToolContext = {
     identity,
@@ -40,7 +60,7 @@ export async function handleEscrow(opts: {
   const result = await runAIWithGenericTools<EscrowRenderHint>({
     systemPrompt,
     history: opts.history,
-    tools: ESCROW_TOOLS,
+    tools,
     executor: (name, argsJson) => executeEscrowTool(ctx, name, argsJson),
     temperature: 0.4, // money + disputes — be more deterministic
   });
