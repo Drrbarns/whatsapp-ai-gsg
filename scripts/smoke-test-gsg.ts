@@ -7,12 +7,12 @@
 import { config } from "dotenv";
 import { resolve } from "node:path";
 config({ path: resolve(__dirname, "../.env.local") });
-import { resolveWhatsAppIdentity } from "../src/lib/gsg-identity";
+import { resolveWhatsAppIdentity } from "../src/contexts/goods/identity";
 import {
   searchProducts,
   getRecommendations,
   trackOrder,
-} from "../src/lib/gsg-tools";
+} from "../src/contexts/goods/tools";
 
 function header(s: string) {
   console.log("\n────────────────────────────────────────────");

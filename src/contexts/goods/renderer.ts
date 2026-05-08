@@ -12,10 +12,10 @@ import {
   sendWhatsAppImageByUrl,
   sendWhatsAppList,
   sendWhatsAppMessage,
-} from "./whatsapp";
-import type { RenderHint } from "./gsg-tool-executor";
-import type { GSGProduct, GSGVariant } from "./gsg-tools";
-import type { Cart } from "./gsg-cart";
+} from "@/lib/whatsapp";
+import type { RenderHint } from "./tool-executor";
+import type { GSGProduct, GSGVariant } from "./tools";
+import type { Cart } from "./cart";
 
 const fmtGHS = (n: number) => `GH₵${n.toFixed(2)}`;
 

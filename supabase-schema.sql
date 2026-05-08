@@ -35,6 +35,20 @@ alter table conversations add column if not exists unread_count int not null def
 alter table conversations add column if not exists last_message_preview text;
 alter table conversations add column if not exists last_message_type text;
 alter table conversations add column if not exists is_typing boolean not null default false;
+-- Multi-context router state (added for the unified GSG agent that serves
+-- Goods, Brand, and Sell-Safe Buy-Safe from a single WhatsApp number).
+alter table conversations add column if not exists active_context text not null default 'brand';
+alter table conversations add column if not exists context_switched_at timestamp with time zone;
+alter table conversations add column if not exists context_switch_reason text;
+do $$ begin
+  if not exists (
+    select 1 from information_schema.check_constraints
+    where constraint_name = 'conversations_active_context_check'
+  ) then
+    alter table conversations add constraint conversations_active_context_check
+      check (active_context in ('goods', 'escrow', 'brand'));
+  end if;
+end $$;
 
 create table if not exists messages (
   id uuid default gen_random_uuid() primary key,

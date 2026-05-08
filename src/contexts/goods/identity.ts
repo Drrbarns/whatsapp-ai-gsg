@@ -8,7 +8,7 @@
 // Backed by the find_user_by_whatsapp_phone(p_wa_id) RPC on GSG Supabase.
 // ============================================================================
 
-import { gsgAdminDb } from "./gsg";
+import { gsgAdminDb } from "./db";
 
 export type GSGIdentityProfile = {
   id: string;

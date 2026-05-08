@@ -11,7 +11,7 @@
 //   ABSOLUTE RULES → BEHAVIORS → POLICIES → CHECKOUT FLOW → ESCALATION
 // ============================================================================
 
-import type { GSGIdentity } from "./gsg-identity";
+import type { GSGIdentity } from "./identity";
 
 export type CartItemForPrompt = {
   product_id: string;

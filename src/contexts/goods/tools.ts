@@ -8,7 +8,7 @@
 //   2. Translated into WhatsApp Interactive Messages by the webhook layer
 // ============================================================================
 
-import { gsgAdminDb } from "./gsg";
+import { gsgAdminDb } from "./db";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

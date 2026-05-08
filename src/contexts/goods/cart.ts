@@ -8,8 +8,8 @@
 // One cart per phone. Items are stored as a JSONB array.
 // ============================================================================
 
-import { adminDb } from "./supabase";
-import { gsgAdminDb } from "./gsg";
+import { adminDb } from "@/lib/supabase";
+import { gsgAdminDb } from "./db";
 
 export type CartItem = {
   product_id: string;

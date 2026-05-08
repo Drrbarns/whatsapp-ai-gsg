@@ -5,8 +5,8 @@
 // is upserted as JSONB so we can keep the full conversation history.
 // ============================================================================
 
-import { gsgAdminDb } from "./gsg";
-import type { GSGIdentity } from "./gsg-identity";
+import { gsgAdminDb } from "./db";
+import type { GSGIdentity } from "./identity";
 
 export type PersistMessage = {
   role: "user" | "assistant";

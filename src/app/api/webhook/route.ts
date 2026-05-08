@@ -23,16 +23,23 @@ import {
   sendWhatsAppMessage,
 } from "@/lib/whatsapp";
 import { extFromMime, uploadToStorage } from "@/lib/storage";
-import { runAIWithTools, type AIMessage } from "@/lib/ai";
-import { resolveWhatsAppIdentity } from "@/lib/gsg-identity";
-import { getCart } from "@/lib/gsg-cart";
-import { buildGSGSystemPrompt } from "@/lib/gsg-system-prompt";
+import { type AIMessage } from "@/lib/ai";
+
+// Context dispatch (router + per-context handlers)
 import {
-  persistConversation,
-  getMemoriesForCustomer,
-} from "@/lib/gsg-persistence";
-import { renderHints } from "@/lib/gsg-renderer";
-import { gsgAdminDb } from "@/lib/gsg";
+  getActiveContext,
+  setActiveContext,
+  type ContextKey,
+} from "@/lib/context-state";
+import { routeMessage } from "@/lib/intent-router";
+import { handleGoods } from "@/contexts/goods/handle";
+import { handleBrand } from "@/contexts/brand/handle";
+import { handleEscrow } from "@/contexts/escrow/handle";
+
+// Goods-side helpers we still call directly from the webhook
+import { resolveWhatsAppIdentity } from "@/contexts/goods/identity";
+import { persistConversation } from "@/contexts/goods/persistence";
+import { gsgAdminDb } from "@/contexts/goods/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -123,6 +130,32 @@ function interactiveToText(message: WAMessage): string | null {
   if (id === "checkout") return "I'd like to checkout now please.";
   if (id === "add_more") return "I want to keep shopping for more items.";
   if (id === "clear_cart") return "Please clear my cart.";
+
+  // Brand context — main menu picks
+  if (id.startsWith("bu:")) {
+    const unitKey = id.slice(3);
+    if (unitKey === "goods") return "I want to shop for products.";
+    if (unitKey === "escrow") return "I have a Sell-Safe Buy-Safe question.";
+    return `Tell me more about your ${unitKey.replace(/_/g, " ")} service.`;
+  }
+
+  // Escrow context — postbacks
+  if (id.startsWith("escrow:open_dispute:")) {
+    const sid = id.slice("escrow:open_dispute:".length);
+    return `I want to open a dispute on transaction ${sid}.`;
+  }
+  if (id.startsWith("escrow:upload_evidence:")) {
+    const sid = id.slice("escrow:upload_evidence:".length);
+    return `I want to upload evidence for transaction ${sid}.`;
+  }
+  if (id.startsWith("escrow:view_full:")) {
+    const sid = id.slice("escrow:view_full:".length);
+    return `Open the full hub for transaction ${sid}.`;
+  }
+  if (id.startsWith("escrow:open_txn:")) {
+    const sid = id.slice("escrow:open_txn:".length);
+    return `Show me the details of transaction ${sid}.`;
+  }
 
   return title || id;
 }
@@ -292,15 +325,31 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: "stored_for_human" });
     }
 
-    // ─── 4.5) First-contact welcome — once per phone number ever.
-    // We send it BEFORE the AI runs so the customer gets an instant friendly
-    // ack while the AI is still figuring out a real reply to their question.
+    // ─── 4.5) Route the message → which context (goods | escrow | brand) handles it?
+    const previousContext = await getActiveContext(phone);
+    const route = routeMessage({
+      message: typeof aiUserContent === "string" ? aiUserContent : "(media)",
+      activeContext: previousContext,
+      isFirstContact,
+    });
+    const targetContext: ContextKey = route.context;
+    if (route.switched) {
+      await setActiveContext(phone, targetContext, route.reason);
+    }
+    console.log(
+      `[webhook] route: ${previousContext} → ${targetContext} (${route.reason}${route.note ? `: ${route.note}` : ""})`
+    );
+
+    // ─── 4.6) First-contact welcome — once per phone number ever.
+    // Sent BEFORE the AI runs so the customer gets an instant friendly ack
+    // while the AI computes a real reply.
     if (isFirstContact) {
-      const brandName =
-        process.env.NEXT_PUBLIC_BRAND_NAME || "GSG Convenience Goods & More";
-      const firstName = identity?.displayName?.split(" ")[0] || profileName?.split(" ")[0] || "";
+      const firstName =
+        identity?.displayName?.split(" ")[0] ||
+        profileName?.split(" ")[0] ||
+        "";
       const greeting = firstName ? `Hey ${firstName}!` : "Hey there!";
-      const welcomeText = `${greeting} 👋 Welcome to ${brandName}. I'm here to help you find products, place orders, or check on existing ones. Give me a sec while I look at your message...`;
+      const welcomeText = `${greeting} 👋 Welcome to GSG Brands. One sec while we look at your message...`;
 
       try {
         const sent = await sendWhatsAppMessage(phone, welcomeText);
@@ -329,18 +378,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ─── 5) Dashboard typing indicator ON + fetch chat history from GSG
+    // ─── 5) Dashboard typing indicator ON + fetch chat history from GSG storefront
     await supabase
       .from("conversations")
       .update({ is_typing: true })
       .eq("id", conversation.id);
 
     let aiReply = "Sorry, I couldn't generate a response.";
-    let aiHints: Awaited<ReturnType<typeof runAIWithTools>>["hints"] = [];
     let aiToolNames: string[] = [];
+    let renderFollowups: () => Promise<void> = async () => {};
 
     try {
-      // ─── Fetch persistent chat history from GSG chat_conversations
+      // Fetch persistent chat history (shared across all contexts so brand can
+      // see what the customer already discussed with goods, etc.)
       const gsg = gsgAdminDb();
       const { data: existingConv } = await gsg
         .from("chat_conversations")
@@ -351,46 +401,57 @@ export async function POST(request: NextRequest) {
       const persistentHistory: AIMessage[] = (
         (existingConv?.messages as Array<{ role: string; content: string }>) ?? []
       )
-        .slice(-18) // keep context tight
+        .slice(-18)
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-      // Append the just-arrived message
       persistentHistory.push({ role: "user", content: aiUserContent });
 
-      // ─── 6) Build GSG system prompt (cart + memories injected here)
-      const cart = await getCart(phone);
-      const memories = await getMemoriesForCustomer({
-        email: identity.email,
-        phone: identity.normalized.intl,
-        customerId: identity.customer?.id,
-      });
+      // ─── 6+7) Dispatch to the right context handler
+      const latestUserText =
+        typeof aiUserContent === "string" ? aiUserContent : "";
 
-      const systemPrompt = buildGSGSystemPrompt({
-        identity,
-        cart: cart.items.map((i) => ({
-          product_id: i.product_id,
-          name: i.name,
-          price: i.price,
-          quantity: i.quantity,
-          variant_name: i.variant_name,
-        })),
-        memories,
-        isFirstContact,
-      });
-
-      // ─── 7) Run AI with multi-round tool loop
-      const aiResult = await runAIWithTools({
-        systemPrompt,
-        history: persistentHistory,
-        ctx: { identity, phone },
-      });
-      aiReply = aiResult.reply;
-      aiHints = aiResult.hints;
-      aiToolNames = aiResult.toolCallNames;
+      if (targetContext === "goods") {
+        const r = await handleGoods({
+          phone,
+          identity,
+          history: persistentHistory,
+          isFirstContact,
+        });
+        aiReply = r.reply;
+        aiToolNames = r.toolCallNames;
+        renderFollowups = r.render;
+      } else if (targetContext === "brand") {
+        const r = await handleBrand({
+          phone,
+          identity: {
+            isKnown: identity.isKnown,
+            displayName: identity.displayName,
+          },
+          history: persistentHistory,
+          latestUserText,
+          route,
+          isFirstContact,
+        });
+        aiReply = r.reply;
+        aiToolNames = r.toolCallNames;
+        renderFollowups = r.render;
+      } else if (targetContext === "escrow") {
+        const r = await handleEscrow({
+          phone,
+          history: persistentHistory,
+          isFirstContact,
+        });
+        aiReply = r.reply;
+        aiToolNames = r.toolCallNames;
+        renderFollowups = r.render;
+      } else {
+        aiReply = "Sorry, I'm not sure how to handle that — try sending 'menu'.";
+        aiToolNames = ["unknown:context"];
+      }
 
       console.log(
-        `[webhook] tools=[${aiToolNames.join(",")}] hints=${aiHints.length} reply_len=${aiReply.length}`
+        `[webhook] context=${targetContext} tools=[${aiToolNames.join(",")}] reply_len=${aiReply.length}`
       );
     } finally {
       await supabase
@@ -415,12 +476,12 @@ export async function POST(request: NextRequest) {
       status: sendStatus,
     });
 
-    // ─── 9) Render any interactive follow-ups (product list, cart, payment CTA)
-    if (sendStatus === "sent" && aiHints.length > 0) {
+    // ─── 9) Render any context-specific follow-ups (product cards / brand CTAs / etc.)
+    if (sendStatus === "sent") {
       try {
-        await renderHints(phone, aiHints);
+        await renderFollowups();
       } catch (err) {
-        console.error("[webhook] renderHints failed (non-fatal):", err);
+        console.error("[webhook] context render failed (non-fatal):", err);
       }
     }
 
@@ -459,8 +520,8 @@ export async function POST(request: NextRequest) {
       status: sendStatus === "sent" ? "replied" : "send_failed",
       saw_image: !!storedImageUrl,
       meta_error: sendError ?? null,
+      context: targetContext,
       tools_called: aiToolNames,
-      hints_rendered: aiHints.map((h) => h.kind),
     });
   } catch (error) {
     console.error("Webhook error:", error);

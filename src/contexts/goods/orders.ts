@@ -11,7 +11,7 @@
 // Mobile Money payment link (Moolre is GSG's only WA payment option).
 // ============================================================================
 
-import { Cart, clearCart } from "./gsg-cart";
+import { Cart, clearCart } from "./cart";
 
 // GSG does NOT charge shipping at checkout — the rider quotes it on delivery.
 

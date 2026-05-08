@@ -16,18 +16,18 @@ import {
   type GSGProduct,
   type GSGOrder,
   type GSGVariant,
-} from "./gsg-tools";
+} from "./tools";
 import {
   getCart,
   addToCart,
   removeFromCart,
   clearCart,
   type Cart,
-} from "./gsg-cart";
-import { startCheckout, type CheckoutSuccess, type CheckoutFailure } from "./gsg-orders";
-import { checkCoupon } from "./gsg-tools";
-import { getStoreInfo } from "./gsg-store-info";
-import type { GSGIdentity } from "./gsg-identity";
+} from "./cart";
+import { startCheckout, type CheckoutSuccess, type CheckoutFailure } from "./orders";
+import { checkCoupon } from "./tools";
+import { getStoreInfo } from "./store-info";
+import type { GSGIdentity } from "./identity";
 
 // ── Render hints — guide the webhook on follow-up WA messages ──────────────
 export type RenderHint =

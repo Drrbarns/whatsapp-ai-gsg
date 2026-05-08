@@ -10,8 +10,8 @@
 // ============================================================================
 
 import OpenAI from "openai";
-import { GSG_TOOLS } from "./gsg-llm-tools";
-import { executeToolCall, type RenderHint, type ToolContext } from "./gsg-tool-executor";
+import { GSG_TOOLS } from "@/contexts/goods/llm-tools";
+import { executeToolCall, type RenderHint, type ToolContext } from "@/contexts/goods/tool-executor";
 
 const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
@@ -141,4 +141,143 @@ export async function runAIWithTools(opts: {
     hints,
     toolCallNames,
   };
+}
+
+// ============================================================================
+// Generic multi-round tool loop (context-agnostic).
+//
+// Lets each context (escrow, future personal-shopper, etc.) plug in their own
+// tool definitions + executor without being entangled with goods-specific
+// types. Mirrors runAIWithTools but takes the tool list and executor as args.
+// ============================================================================
+export type GenericToolHint<H> = H | { kind: "none" };
+
+export async function runAIWithGenericTools<H>(opts: {
+  systemPrompt: string;
+  history: AIMessage[];
+  tools: OpenAI.Chat.Completions.ChatCompletionTool[];
+  /** Returns { llm, hint } — same shape as goods tool-executor. */
+  executor: (
+    name: string,
+    argsJson: string
+  ) => Promise<{ llm: string; hint: GenericToolHint<H> }>;
+  model?: string;
+  temperature?: number;
+  maxRounds?: number;
+}): Promise<{ reply: string; hints: H[]; toolCallNames: string[] }> {
+  const model = opts.model || process.env.AI_MODEL || DEFAULT_MODEL;
+  const maxRounds = opts.maxRounds ?? MAX_TOOL_ROUNDS;
+
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: opts.systemPrompt },
+    ...(opts.history.map((m) => ({
+      role: m.role,
+      content: m.content as unknown as string,
+    })) as OpenAI.Chat.Completions.ChatCompletionMessageParam[]),
+  ];
+
+  const hints: H[] = [];
+  const toolCallNames: string[] = [];
+
+  for (let round = 0; round < maxRounds; round++) {
+    let completion: OpenAI.Chat.Completions.ChatCompletion;
+    try {
+      completion = await openai.chat.completions.create({
+        model,
+        messages,
+        tools: opts.tools,
+        tool_choice: "auto",
+        temperature: opts.temperature ?? 0.5,
+      });
+    } catch (err) {
+      console.error("[ai/generic] LLM call failed:", err);
+      return {
+        reply:
+          "Sorry, I'm having a quick hiccup. Please try sending that again in a moment 🙏",
+        hints,
+        toolCallNames,
+      };
+    }
+
+    const choice = completion.choices[0]?.message;
+    if (!choice) break;
+
+    const toolCalls = choice.tool_calls;
+    if (!toolCalls || toolCalls.length === 0) {
+      return {
+        reply: cleanReply(choice.content || "") || "Got it 👍",
+        hints,
+        toolCallNames,
+      };
+    }
+
+    messages.push({
+      role: "assistant",
+      content: choice.content ?? null,
+      tool_calls: toolCalls,
+    } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+
+    for (const tc of toolCalls) {
+      if (tc.type !== "function") continue;
+      const fn = tc.function;
+      toolCallNames.push(fn.name);
+
+      const result = await opts.executor(fn.name, fn.arguments || "{}");
+      const hintKind = (result.hint as { kind?: string }).kind;
+      if (hintKind && hintKind !== "none") hints.push(result.hint as H);
+
+      messages.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: result.llm,
+      } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+    }
+  }
+
+  return {
+    reply:
+      "I had a hard time finishing that one — could you say it differently?",
+    hints,
+    toolCallNames,
+  };
+}
+
+// ============================================================================
+// Plain (tools-less) LLM helper.
+//
+// Used by contexts that don't need to call any tools — currently the brand
+// context, which is purely conversational + sends CTA links via a renderer
+// it controls itself (not via tool calls).
+// ============================================================================
+export async function runAIPlain(opts: {
+  systemPrompt: string;
+  history: AIMessage[];
+  model?: string;
+  temperature?: number;
+}): Promise<{ reply: string }> {
+  const model = opts.model || process.env.AI_MODEL || DEFAULT_MODEL;
+
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: opts.systemPrompt },
+    ...(opts.history.map((m) => ({
+      role: m.role,
+      content: m.content as unknown as string,
+    })) as OpenAI.Chat.Completions.ChatCompletionMessageParam[]),
+  ];
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model,
+      messages,
+      temperature: opts.temperature ?? 0.6,
+    });
+    const raw = completion.choices[0]?.message?.content || "";
+    return { reply: cleanReply(raw) || "Got it 👍" };
+  } catch (err) {
+    console.error("[ai/plain] LLM call failed:", err);
+    return {
+      reply:
+        "Sorry, I'm having a quick hiccup. Please try sending that again in a moment 🙏",
+    };
+  }
 }
