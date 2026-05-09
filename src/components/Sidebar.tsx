@@ -40,7 +40,7 @@ export function Sidebar({
 
   return (
     <aside
-      className="w-[400px] flex flex-col border-r"
+      className="w-full md:w-[400px] flex flex-col border-r flex-shrink-0"
       style={{ background: "var(--wa-panel)", borderColor: "var(--wa-divider)" }}
     >
       {/* Top bar with profile + actions */}

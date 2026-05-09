@@ -94,7 +94,7 @@ export function AudioPlayer({
   const playedBars = Math.floor((progress / 100) * bars.length);
 
   return (
-    <div className="flex items-center gap-2.5 min-w-[260px]">
+    <div className="flex items-center gap-2.5 w-full md:min-w-[260px]">
       <audio ref={audioRef} src={src} preload="metadata" />
       {isVoice && (
         <Avatar

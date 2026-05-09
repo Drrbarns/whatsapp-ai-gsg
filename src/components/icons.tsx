@@ -29,6 +29,7 @@ function svg(d: string, fill = false) {
 export const SearchIcon = svg("M11 4a7 7 0 1 0 4.95 11.95A7 7 0 0 0 11 4zM21 21l-4.35-4.35");
 export const FilterIcon = svg("M3 6h18M6 12h12M10 18h4");
 export const NewChatIcon = svg("M12 5v14M5 12h14");
+export const ChevronLeftIcon = svg("M15 18l-6-6 6-6");
 export const PaperclipIcon = svg(
   "M21.44 11.05L12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83L15.07 6.1"
 );

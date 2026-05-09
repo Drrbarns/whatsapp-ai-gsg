@@ -29,7 +29,7 @@ export function EmojiPicker({
   return (
     <div
       ref={ref}
-      className="absolute bottom-14 left-0 w-[340px] max-h-[340px] overflow-y-auto rounded-lg shadow-xl z-30 p-2"
+      className="absolute bottom-14 left-0 w-[340px] max-w-[calc(100vw-1rem)] max-h-[60vh] md:max-h-[340px] overflow-y-auto rounded-lg shadow-xl z-30 p-2"
       style={{ background: "var(--wa-header)", border: "1px solid var(--wa-divider)" }}
     >
       {Object.entries(EMOJI).map(([cat, list]) => (

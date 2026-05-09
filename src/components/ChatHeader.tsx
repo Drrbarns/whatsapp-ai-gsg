@@ -2,22 +2,41 @@
 
 import React from "react";
 import { Avatar } from "@/components/Avatar";
-import { MoreIcon, PhoneIcon, SearchIcon, VideoCallIcon } from "@/components/icons";
+import {
+  ChevronLeftIcon,
+  MoreIcon,
+  PhoneIcon,
+  SearchIcon,
+  VideoCallIcon,
+} from "@/components/icons";
 import type { Conversation } from "@/lib/types";
 
 export function ChatHeader({
   conversation,
   onToggleMode,
+  onBack,
 }: {
   conversation: Conversation;
   onToggleMode: () => void;
+  onBack?: () => void;
 }) {
   return (
     <header
-      className="flex items-center justify-between h-[60px] px-4"
+      className="flex items-center justify-between h-[60px] px-2 md:px-4"
       style={{ background: "var(--wa-header)", borderBottom: "1px solid var(--wa-divider)" }}
     >
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 md:gap-3 min-w-0">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="md:hidden w-9 h-9 -ml-1 rounded-full flex items-center justify-center hover:bg-white/[0.06]"
+            style={{ color: "var(--wa-text-secondary)" }}
+            aria-label="Back to chats"
+          >
+            <ChevronLeftIcon size={24} />
+          </button>
+        )}
         <Avatar name={conversation.name} phone={conversation.phone} size={40} />
         <div className="min-w-0">
           <div
@@ -48,11 +67,11 @@ export function ChatHeader({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-1" style={{ color: "var(--wa-text-secondary)" }}>
+      <div className="flex items-center gap-1 flex-shrink-0" style={{ color: "var(--wa-text-secondary)" }}>
         <button
           type="button"
           onClick={onToggleMode}
-          className="px-3 h-9 rounded-full text-xs font-medium transition-colors mr-2"
+          className="px-2.5 md:px-3 h-9 rounded-full text-[11px] md:text-xs font-medium transition-colors md:mr-2"
           style={{
             background:
               conversation.mode === "agent"
@@ -62,12 +81,15 @@ export function ChatHeader({
           }}
           title="Toggle who replies"
         >
-          {conversation.mode === "agent" ? "AI Mode" : "Human Mode"}
+          {conversation.mode === "agent" ? "AI" : "YOU"}
+          <span className="hidden md:inline"> Mode</span>
         </button>
-        <IconBtn title="Video call"><VideoCallIcon size={20} /></IconBtn>
-        <IconBtn title="Voice call"><PhoneIcon size={20} /></IconBtn>
-        <IconBtn title="Search"><SearchIcon size={20} /></IconBtn>
-        <IconBtn title="More"><MoreIcon size={20} /></IconBtn>
+        <span className="hidden md:flex items-center gap-1">
+          <IconBtn title="Video call"><VideoCallIcon size={20} /></IconBtn>
+          <IconBtn title="Voice call"><PhoneIcon size={20} /></IconBtn>
+          <IconBtn title="Search"><SearchIcon size={20} /></IconBtn>
+          <IconBtn title="More"><MoreIcon size={20} /></IconBtn>
+        </span>
       </div>
     </header>
   );

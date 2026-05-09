@@ -113,12 +113,15 @@ export function Composer({
     const isVideo = pendingFile.file.type.startsWith("video/");
     return (
       <div
-        className="absolute inset-0 flex flex-col"
+        className="absolute inset-0 flex flex-col z-40"
         style={{ background: "rgba(11, 20, 26, 0.96)" }}
       >
         <div
-          className="flex items-center justify-between h-14 px-4"
-          style={{ background: "var(--wa-header)" }}
+          className="flex items-center justify-between h-14 px-4 flex-shrink-0"
+          style={{
+            background: "var(--wa-header)",
+            paddingTop: "env(safe-area-inset-top, 0px)",
+          }}
         >
           <button
             type="button"
@@ -167,15 +170,18 @@ export function Composer({
           )}
         </div>
         <div
-          className="flex items-end gap-2 px-4 py-3"
-          style={{ background: "var(--wa-header)" }}
+          className="flex items-end gap-2 px-3 md:px-4 py-3 flex-shrink-0"
+          style={{
+            background: "var(--wa-header)",
+            paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))",
+          }}
         >
           <textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
             placeholder="Add a caption…"
             rows={1}
-            className="flex-1 resize-none rounded-lg px-4 py-2 text-sm focus:outline-none"
+            className="flex-1 min-w-0 resize-none rounded-lg px-4 py-2 text-base md:text-sm focus:outline-none"
             style={{ background: "var(--wa-input)", color: "var(--wa-text)" }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -188,7 +194,7 @@ export function Composer({
             type="button"
             onClick={sendPending}
             disabled={sending}
-            className="w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50"
+            className="w-12 h-12 rounded-full flex items-center justify-center disabled:opacity-50 flex-shrink-0"
             style={{ background: "var(--wa-green)", color: "#fff" }}
           >
             <SendIcon size={20} />
@@ -219,8 +225,11 @@ export function Composer({
   // ---------------- Default composer ----------------
   return (
     <div
-      className="px-3 py-2.5 flex items-end gap-2 relative"
-      style={{ background: "var(--wa-header)" }}
+      className="px-2 md:px-3 py-2 md:py-2.5 flex items-end gap-1 md:gap-2 relative"
+      style={{
+        background: "var(--wa-header)",
+        paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+      }}
     >
       {showEmoji && (
         <EmojiPicker
@@ -238,7 +247,7 @@ export function Composer({
           setShowEmoji((v) => !v);
           setShowAttach(false);
         }}
-        className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06]"
+        className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
         style={{ color: "var(--wa-text-secondary)" }}
         title="Emoji"
       >
@@ -250,7 +259,7 @@ export function Composer({
           setShowAttach((v) => !v);
           setShowEmoji(false);
         }}
-        className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06]"
+        className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06] flex-shrink-0"
         style={{ color: "var(--wa-text-secondary)" }}
         title="Attach"
       >
@@ -269,7 +278,7 @@ export function Composer({
         }}
         placeholder="Type a message"
         rows={1}
-        className="flex-1 max-h-[120px] resize-none rounded-lg px-3 py-2.5 text-sm focus:outline-none leading-5"
+        className="flex-1 min-w-0 max-h-[120px] resize-none rounded-lg px-3 py-2.5 text-base md:text-sm focus:outline-none leading-5"
         style={{ background: "var(--wa-input)", color: "var(--wa-text)" }}
       />
 
@@ -278,7 +287,7 @@ export function Composer({
           type="button"
           onClick={sendText}
           disabled={sending}
-          className="w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-50"
+          className="w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-50 flex-shrink-0"
           style={{ background: "var(--wa-green)", color: "#fff" }}
           title="Send"
         >

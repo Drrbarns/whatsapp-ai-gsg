@@ -186,19 +186,35 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: "var(--wa-bg)" }}>
-      <Sidebar
-        conversations={conversations}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-      />
+    <div
+      className="flex h-screen-dvh overflow-hidden"
+      style={{ background: "var(--wa-bg)" }}
+    >
+      {/* Sidebar: full-screen on mobile when no chat is open; hidden on mobile
+          while a chat is open. Always visible on md+ alongside the chat pane. */}
+      <div
+        className={`${selected ? "hidden md:flex" : "flex"} w-full md:w-auto`}
+      >
+        <Sidebar
+          conversations={conversations}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
+      </div>
 
-      <main className="flex-1 flex flex-col min-w-0 relative">
+      {/* Chat pane: hidden on mobile when no chat is selected. */}
+      <main
+        className={`${selected ? "flex" : "hidden md:flex"} flex-1 flex-col min-w-0 relative`}
+      >
         {!selected ? (
           <EmptyState />
         ) : (
           <>
-            <ChatHeader conversation={selected} onToggleMode={toggleMode} />
+            <ChatHeader
+              conversation={selected}
+              onToggleMode={toggleMode}
+              onBack={() => setSelectedId(null)}
+            />
             <MessageList
               messages={messages}
               conversation={selected}

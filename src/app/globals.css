@@ -41,6 +41,21 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
     sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   -webkit-font-smoothing: antialiased;
+  /* iOS notch / Android gesture-bar handling */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Use 100dvh on mobile browsers so the viewport doesn't jump when the URL
+   bar shows / hides. Falls back to vh on older engines. */
+.h-screen-dvh { height: 100vh; height: 100dvh; }
+
+/* Inputs ≥16px on mobile so iOS doesn't auto-zoom on focus. We keep the
+   smaller WhatsApp Web look on desktop via `md:text-sm` overrides. */
+@media (max-width: 767px) {
+  input, textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* WhatsApp-style scrollbars */

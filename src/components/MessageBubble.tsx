@@ -68,7 +68,7 @@ export function MessageBubble({
 
   return (
     <div className={`flex ${justify} px-2`}>
-      <div className={`flex flex-col ${align} max-w-[75%] sm:max-w-[65%] min-w-0`}>
+      <div className={`flex flex-col ${align} max-w-[85%] sm:max-w-[75%] md:max-w-[65%] min-w-0`}>
         <div
           className={`relative wa-bubble shadow-sm ${tailClass}`}
           style={{
@@ -78,7 +78,8 @@ export function MessageBubble({
             padding: isImage && onlyMedia ? 4 : isImage ? 4 : 6,
             paddingLeft: isAudio || isImage ? undefined : 9,
             paddingRight: isAudio || isImage ? undefined : 9,
-            minWidth: isAudio ? 280 : 60,
+            minWidth: isAudio ? 220 : 60,
+            maxWidth: "100%",
           }}
         >
           {/* IMAGE */}
@@ -130,7 +131,7 @@ export function MessageBubble({
               target="_blank"
               rel="noreferrer"
               download={message.media_filename || true}
-              className="flex items-center gap-3 rounded-md px-3 py-2.5 min-w-[260px] hover:opacity-90"
+              className="flex items-center gap-3 rounded-md px-3 py-2.5 w-full md:min-w-[260px] hover:opacity-90"
               style={{ background: "rgba(0,0,0,0.18)" }}
             >
               <span
