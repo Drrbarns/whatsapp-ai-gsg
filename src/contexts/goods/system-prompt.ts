@@ -33,11 +33,11 @@ export type SystemPromptInputs = {
 };
 
 const BRAND = () => process.env.NEXT_PUBLIC_BRAND_NAME || "GSG Convenience Goods & More";
-const PHONE = () => process.env.NEXT_PUBLIC_BRAND_SUPPORT_PHONE || "+233 24 861 5775";
+const PHONE = () => process.env.NEXT_PUBLIC_BRAND_SUPPORT_PHONE || "+233 24 603 3792";
 const EMAIL = () =>
-  process.env.NEXT_PUBLIC_BRAND_SUPPORT_EMAIL || "support@discountdiscoveryzone.com";
+  process.env.NEXT_PUBLIC_BRAND_SUPPORT_EMAIL || "info@gsgbrands.com.gh";
 const SITE = () =>
-  (process.env.GSG_STOREFRONT_URL || "https://www.discountdiscoveryzone.com").replace(
+  (process.env.GSG_STOREFRONT_URL || "https://goods.gsgbrands.com.gh").replace(
     /\/$/,
     ""
   );
