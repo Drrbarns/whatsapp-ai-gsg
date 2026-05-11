@@ -86,6 +86,26 @@ export function routeMessage(opts: {
     };
   }
 
+  // ── 1.5. Short conversational replies always stay in the active context.
+  // Things like "yes", "yh", "ok", "no", "1", "thanks", a phone number, or
+  // a quick address phrase shouldn't trigger keyword-routing — they're
+  // answers to whatever the active agent just asked.
+  const isVeryShort = norm.length <= 25;
+  const isOneOrTwoWords = norm.split(/\s+/).filter(Boolean).length <= 2;
+  if (
+    !opts.isFirstContact &&
+    isVeryShort &&
+    isOneOrTwoWords &&
+    opts.activeContext !== "brand"
+  ) {
+    return {
+      context: opts.activeContext,
+      reason: "sticky_active",
+      switched: false,
+      note: `short reply (${norm.length} chars) — staying in ${opts.activeContext}`,
+    };
+  }
+
   // ── 2. Strong intent match against business-unit keywords ───────────────
   // detectIntent() returns the business unit the message most strongly hints at.
   // We map only the units that have a native context:

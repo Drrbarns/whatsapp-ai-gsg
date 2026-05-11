@@ -465,7 +465,13 @@ export async function searchProducts(
       candidates.push(p);
     }
   }
-  const scored = candidates
+  // Defensive: hide products with no real price set on the storefront.
+  // 343 of 345 GSG products currently have price=0 — quoting GH₵0.00 in
+  // chat looks broken. Better to silently filter and let the LLM say
+  // "we don't have any X right now" than to try to sell at zero. This
+  // line is a no-op once prices are populated on the storefront.
+  const priced = candidates.filter((p) => Number(p.price ?? 0) > 0);
+  const scored = priced
     .map((p) => {
       let score = scoreProduct(p, rawTerm, meaningfulTokens, categoryIds);
 
@@ -553,7 +559,8 @@ export async function getRecommendations(
        product_variants(id)`
     )
     .eq("status", "active")
-    .gt("quantity", 0);
+    .gt("quantity", 0)
+    .gt("price", 0);
 
   const term = context?.trim();
   if (term) {

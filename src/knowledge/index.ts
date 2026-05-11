@@ -20,6 +20,7 @@ import {
   PERSONAL_SHOPPER_KNOWLEDGE,
   PERSONAL_SHOPPER_SHORT,
 } from "./personal-shopper";
+import { GOODS_KNOWLEDGE, GOODS_SHORT } from "./goods";
 import {
   SBBS_KNOWLEDGE,
   SBBS_SHORT,
@@ -41,6 +42,8 @@ export {
   renderCompanyIdentity,
   PERSONAL_SHOPPER_KNOWLEDGE,
   PERSONAL_SHOPPER_SHORT,
+  GOODS_KNOWLEDGE,
+  GOODS_SHORT,
   SBBS_KNOWLEDGE,
   SBBS_SHORT,
   SBBS_FEES,
@@ -64,6 +67,8 @@ ${renderCompanyContacts()}
 
 ${PERSONAL_SHOPPER_KNOWLEDGE}
 
+${GOODS_KNOWLEDGE}
+
 ${SBBS_KNOWLEDGE}
 
 ${COURIER_KNOWLEDGE}
@@ -73,9 +78,6 @@ ${STREET_CUISINE_KNOWLEDGE}
 ${AFFILIATES_KNOWLEDGE}
 
 ${AID_KNOWLEDGE}
-
-## Convenience Goods & More (the agent for this is a separate context — route_to('goods'))
-A live online supermarket: rice, oil, noodles, soap, toiletries, household items, mobile accessories, stationery, basic medicine, more. Same/next-day delivery in Accra; 2–7 days elsewhere in Ghana. Mobile Money checkout. Free pickup from the Accra store. The catalogue is searchable LIVE — once routed, the goods agent can find anything in stock and add it to the customer's cart.
 
 # DEFAULT FAQ ANSWERS (you can use these verbatim when applicable)
 - "What services does GSG offer?" → list the seven (Convenience Goods, Personal Shopper, SBBS, StreetCuisine, Courier, Affiliates, GSG-AID) in one sentence; then ask which one they're after.
@@ -102,11 +104,11 @@ export function buildGoodsAdjacencyBlock(): string {
 
 You're the Convenience Goods agent — you carry our in-stock catalogue and check out via Mobile Money. But sometimes a customer wants something we don't stock, or a use-case that's better served by a sister service. KNOW these so you can route gracefully:
 
-- PERSONAL SHOPPER (https://shopper.gsgbrands.com.gh) — we send a real shopper to Makola Market, Adabrakah Fish Market, wholesalers or specialty stalls in person, with live photo approval. Use this when:
-  - Customer asks for fresh meat, fresh fish, fresh produce, ingredients-by-recipe ("ingredients for goat soup", "everything for jollof for 6"), market-only items, building supplies, fabrics — things we DON'T stock.
-  - Customer wants to compare prices in person before buying.
-  - Customer wants a bulk / wholesale run.
-  → DON'T just say "we don't have X". Say: "We don't stock fresh goat meat in our online shop, but our Personal Shopper team can grab it from Adabrakah Fish Market for you and send live photos before they pay — want me to set that up? https://shopper.gsgbrands.com.gh"
+- MY PERSONAL SHOPPER (https://shopper.gsgbrands.com.gh) — a real GSG shopper sources items from local markets, shops, and specialty stores on the customer's behalf. Source-price guaranteed (no mark-up on goods); 5% commission or LESS on the subtotal; distance-based delivery fee. The customer creates a list (item + quantity + their estimated price), we confirm totals, they pay online via Mobile Money or card, then we shop and deliver. Same-day in Accra for lists placed before 11am. Use this when:
+  - Customer asks for fresh meat, fresh fish, fresh produce, ingredients-by-recipe ("ingredients for goat soup", "everything for jollof for 6"), market-only items, building materials (cement / blocks / tools), specialty / imported goods we don't stock.
+  - Customer needs an URGENT pharmacy run (medicines, first-aid) — we can source on a valid prescription.
+  - Customer wants someone else to do the running around at fair, transparent pricing.
+  → DON'T just say "we don't have X". Say: "We don't stock fresh goat meat in our online shop, but our Personal Shopper team can source it for you at the market price plus a small commission and deliver it. Want me to set that up? https://shopper.gsgbrands.com.gh"
 
 - SELL-SAFE BUY-SAFE / SBBS (https://sellbuysafe.gsgbrands.com.gh) — escrow for buying off-platform (Instagram seller, WhatsApp vendor, marketplace). Use this when a customer:
   - Wants to buy a high-value item (iPhone, laptop, jewellery) from someone they don't fully trust.

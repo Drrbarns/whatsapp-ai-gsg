@@ -118,6 +118,15 @@ export async function addToCart(opts: {
       reason: `Only ${product.quantity ?? 0} in stock — can't add ${qty}.`,
     };
   }
+  // Pricing safety: refuse to add an unpriced item — quoting GH₵0.00 in
+  // a cart looks broken to the customer.
+  if (Number(product.price ?? 0) <= 0) {
+    return {
+      ok: false,
+      reason:
+        "Pricing on that item is being updated — I can't add it to the cart yet. A teammate will follow up with the price shortly.",
+    };
+  }
 
   let variantName: string | null = null;
   let variantPrice: number | null = null;
