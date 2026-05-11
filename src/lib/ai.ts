@@ -37,7 +37,9 @@ export type AIMessage = {
 };
 
 const MAX_TOOL_ROUNDS = 4;
-const DEFAULT_MODEL = "openai/gpt-5";
+// Free OpenRouter tier — MiniMax M2.5. Override via AI_MODEL env var if
+// you have a paid model you'd rather use.
+const DEFAULT_MODEL = "minimax/minimax-m2.5:free";
 
 // User-facing fallback when we can't get a useful reply out of the LLM.
 // Always offers a human escape so customers aren't stuck.
