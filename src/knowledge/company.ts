@@ -37,14 +37,18 @@ export const COMPANY = {
     sbbsDisputes: "disputes@sellbuysafe.gsgbrands.com",
   },
 
-  // Real, verified handles (from the corporate footer).
+  // Real, verified handles. Only list a channel here if it actually exists
+  // on the live site — the agent is instructed to NEVER claim a channel
+  // we haven't shipped. Facebook / Snapchat / YouTube are intentionally
+  // omitted because they currently default to empty in the storefront
+  // settings (see gsgshop/components/Footer.tsx).
   social: {
     whatsappChannel: "https://whatsapp.com/channel/0029VbBYwi3D",
     telegram: "https://t.me/gsgbrandsgh",
     twitter: "https://x.com/gsgbrandsgh",
     instagram: "https://www.instagram.com/gsgbrandsgh",
     instagramHandle: "@gsgbrandsgh",
-    facebook: "https://www.facebook.com/gsgbrandsgh",
+    tiktok: "https://www.tiktok.com/@gsgbrandsgh",
   },
 
   // Support hours from /customer-experience (authoritative on site).
@@ -107,7 +111,7 @@ export const COMPANY_PILLARS: Array<{ name: string; line: string }> = [
 // Each context's system prompt composes its identity block from these.
 
 export function renderCompanyContacts(): string {
-  return `# CONTACT CHANNELS (real, verified — never make these up)
+  return `# CONTACT CHANNELS — ONLY list these. Never claim a channel that's not in this list.
 - WhatsApp (you are here): ${COMPANY.phones.whatsappPrimary}
 - Call line / alt WhatsApp: ${COMPANY.phones.callLine}
 - Extended-hours line: ${COMPANY.phones.extendedSupport}
@@ -115,9 +119,11 @@ export function renderCompanyContacts(): string {
 - Telegram: ${COMPANY.social.telegram}
 - WhatsApp Channel: ${COMPANY.social.whatsappChannel}
 - Instagram: ${COMPANY.social.instagram} (${COMPANY.social.instagramHandle})
-- Facebook: ${COMPANY.social.facebook}
+- TikTok: ${COMPANY.social.tiktok}
 - Twitter / X: ${COMPANY.social.twitter}
 - Website: ${COMPANY.homepage}
+
+If a customer asks about Facebook, YouTube, Snapchat or any other platform NOT listed above: be honest — "We're not on Facebook right now, but you can reach us on WhatsApp, Telegram, Instagram, TikTok, X or by email." Don't make up handles.
 
 # SUPPORT HOURS
 - Regular: ${COMPANY.hours.regular}

@@ -83,7 +83,8 @@ ${AID_KNOWLEDGE}
 - "What services does GSG offer?" → list the seven (Convenience Goods, Personal Shopper, SBBS, StreetCuisine, Courier, Affiliates, GSG-AID) in one sentence; then ask which one they're after.
 - "Where are you located?" → HQ in ${COMPANY.hqCity}, with logistics hubs in ${COMPANY.expansionHubs.join(" and ")}; we ship across Ghana.
 - "What's your phone number?" → "${COMPANY.phones.whatsappPrimary} (where you're chatting with us now) or ${COMPANY.phones.callLine}; extended-hours line is ${COMPANY.phones.extendedSupport}." Pick the most relevant one — don't dump the whole list unless asked.
-- "Do you have Facebook / Instagram / Twitter?" → YES, all three: ${COMPANY.social.facebook}, ${COMPANY.social.instagram}, ${COMPANY.social.twitter}. Plus Telegram ${COMPANY.social.telegram} and our WhatsApp Channel.
+- "Do you have Instagram / Twitter / TikTok?" → YES: Instagram ${COMPANY.social.instagram}, X (Twitter) ${COMPANY.social.twitter}, TikTok ${COMPANY.social.tiktok}. Also Telegram ${COMPANY.social.telegram} and our WhatsApp Channel ${COMPANY.social.whatsappChannel}.
+- "Do you have Facebook / YouTube / Snapchat?" → Be honest — we're not on those right now. Point them to the channels we DO have (WhatsApp, Telegram, Instagram, TikTok, X, email).
 - "What are your hours?" → ${COMPANY.hours.regular}; ${COMPANY.hours.extended}.
 - "Are you live 24/7?" → Phone support follows the schedule above; WhatsApp itself is monitored throughout the day and we usually respond within minutes.`;
 }

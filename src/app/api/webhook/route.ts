@@ -32,6 +32,7 @@ import {
   type ContextKey,
 } from "@/lib/context-state";
 import { routeMessage } from "@/lib/intent-router";
+import { detectNameCorrection } from "@/lib/name-correction";
 import { handleGoods } from "@/contexts/goods/handle";
 import { handleBrand } from "@/contexts/brand/handle";
 import { handleEscrow } from "@/contexts/escrow/handle";
@@ -204,11 +205,16 @@ export async function POST(request: NextRequest) {
         .single();
       conversation = created;
       isFirstContact = true;
-    } else if (profileName && profileName !== conversation.name) {
+    } else if (!conversation.name && profileName) {
+      // Only set the name if we don't have one yet. Once the customer (or a
+      // chat-detected correction) gives us a real name, we DO NOT overwrite
+      // it on every subsequent message — that's how "I'm Samuel, not Yempeez"
+      // kept getting reverted before.
       await supabase
         .from("conversations")
         .update({ name: profileName })
         .eq("id", conversation.id);
+      conversation.name = profileName;
     }
     if (!conversation) {
       return Response.json({ error: "convo_create_failed" }, { status: 500 });
@@ -309,10 +315,32 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", conversation.id);
 
+    // ─── 2.5) Detect name corrections in this message and persist them.
+    // Once persisted, the preferred name overrides the WhatsApp profile name
+    // for all downstream prompts.
+    if (typeof aiUserContent === "string") {
+      const corrected = detectNameCorrection(aiUserContent);
+      if (corrected && corrected !== conversation.name) {
+        await supabase
+          .from("conversations")
+          .update({ name: corrected })
+          .eq("id", conversation.id);
+        conversation.name = corrected;
+        console.log(`[webhook] name correction: "${profileName}" → "${corrected}"`);
+      }
+    }
+
     // ─── 3) Identity resolution
     const identity = await resolveWhatsAppIdentity(phone);
+    // Prefer the name we have on `conversations` (chat-corrected or stored)
+    // over whatever WhatsApp profile says today. The WA profile is volatile
+    // (people use business handles, slogans, anything) and overrides cause
+    // the agent to address customers by the wrong name turn after turn.
+    if (conversation.name && conversation.name !== identity.displayName) {
+      identity.displayName = conversation.name;
+    }
     console.log(
-      `[webhook] from=${identity.normalized.intl} known=${identity.isKnown} email=${identity.email ?? "—"}`
+      `[webhook] from=${identity.normalized.intl} known=${identity.isKnown} name=${identity.displayName ?? "—"} email=${identity.email ?? "—"}`
     );
 
     // ─── 4) Mark read + show WhatsApp typing dots
@@ -389,21 +417,35 @@ export async function POST(request: NextRequest) {
     let renderFollowups: () => Promise<void> = async () => {};
 
     try {
-      // Fetch persistent chat history (shared across all contexts so brand can
-      // see what the customer already discussed with goods, etc.)
-      const gsg = gsgAdminDb();
-      const { data: existingConv } = await gsg
-        .from("chat_conversations")
-        .select("messages")
-        .eq("session_id", phone)
-        .maybeSingle();
+      // Source of truth for chat history is the agent's own `messages` table.
+      // We *also* mirror to the storefront's chat_conversations later, but that
+      // table's schema is owned by the storefront — we never read from it here.
+      // Read the last ~24 turns; trim to assistant/user, drop our own
+      // "having a quick hiccup" filler so it doesn't poison context on retry.
+      const HICCUP = "Sorry, I'm having a quick hiccup";
+      const { data: recentMsgs } = await supabase
+        .from("messages")
+        .select("role, content")
+        .eq("conversation_id", conversation.id)
+        .order("created_at", { ascending: false })
+        .limit(24);
 
-      const persistentHistory: AIMessage[] = (
-        (existingConv?.messages as Array<{ role: string; content: string }>) ?? []
-      )
-        .slice(-18)
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+      const persistentHistory: AIMessage[] = ((recentMsgs ?? []) as Array<{
+        role: string;
+        content: string | null;
+      }>)
+        .reverse()
+        .filter(
+          (m) =>
+            (m.role === "user" || m.role === "assistant") &&
+            typeof m.content === "string" &&
+            m.content.length > 0 &&
+            !(m.role === "assistant" && m.content.includes(HICCUP))
+        )
+        .map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content as string,
+        }));
 
       persistentHistory.push({ role: "user", content: aiUserContent });
 

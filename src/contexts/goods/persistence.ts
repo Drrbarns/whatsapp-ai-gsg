@@ -1,8 +1,12 @@
 // ============================================================================
-// Persist WhatsApp conversations and AI memories to GSG's chat_conversations.
+// Persist WhatsApp conversations and AI memories to the GSG storefront DB.
 //
-// One row per session_id (== phone number for WhatsApp). Messages array
-// is upserted as JSONB so we can keep the full conversation history.
+// The storefront's `chat_conversations` schema (see migrations/001) uses
+// `phone` + `history` (jsonb) — NOT the `session_id`/`messages` shape used
+// by older clones of this agent. Earlier versions of this file wrote to the
+// wrong columns, causing every write to silently fail. This file is now
+// aligned with the live schema and is fully defensive: any error logs but
+// never throws, because conversation persistence must never block the reply.
 // ============================================================================
 
 import { gsgAdminDb } from "./db";
@@ -16,56 +20,79 @@ export type PersistMessage = {
 };
 
 export async function persistConversation(opts: {
-  sessionId: string; // we use the phone number
+  /** WhatsApp phone in international format (e.g. +233246033792). */
+  sessionId: string;
   identity: GSGIdentity;
-  newMessages: PersistMessage[]; // just the latest user + assistant pair
+  newMessages: PersistMessage[];
   intent?: string;
   category?: string;
 }): Promise<void> {
   const db = gsgAdminDb();
-  const { sessionId, identity, newMessages } = opts;
+  const phone = opts.identity.normalized.intl || opts.sessionId;
 
-  const { data: existing } = await db
-    .from("chat_conversations")
-    .select("id, messages, message_count")
-    .eq("session_id", sessionId)
-    .maybeSingle();
-
-  const stamped = newMessages.map((m) => ({
-    ...m,
-    timestamp: m.timestamp ?? new Date().toISOString(),
-  }));
-
-  if (existing) {
-    const merged = [...((existing.messages as PersistMessage[]) ?? []), ...stamped];
-    await db
+  try {
+    const { data: existing, error: selErr } = await db
       .from("chat_conversations")
-      .update({
-        messages: merged,
-        message_count: (existing.message_count ?? 0) + stamped.length,
-        updated_at: new Date().toISOString(),
-        ...(opts.intent ? { intent: opts.intent } : {}),
-        ...(opts.category ? { category: opts.category } : {}),
-        customer_email: identity.email,
-        customer_name: identity.displayName,
-        whatsapp_phone: identity.normalized.intl,
-        user_id: identity.profile?.id ?? null,
-      })
-      .eq("id", existing.id);
-  } else {
-    await db.from("chat_conversations").insert({
-      session_id: sessionId,
-      messages: stamped,
-      message_count: stamped.length,
-      channel: "whatsapp",
+      .select("id, history, message_count, metadata")
+      .eq("phone", phone)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (selErr) {
+      console.warn("[persistConversation] select failed:", selErr.message);
+      return;
+    }
+
+    const stamped = opts.newMessages.map((m) => ({
+      ...m,
+      timestamp: m.timestamp ?? new Date().toISOString(),
+    }));
+
+    const meta = {
+      ...((existing?.metadata as Record<string, unknown>) ?? {}),
       ai_handled: true,
-      customer_email: identity.email,
-      customer_name: identity.displayName,
-      whatsapp_phone: identity.normalized.intl,
-      user_id: identity.profile?.id ?? null,
-      ...(opts.intent ? { intent: opts.intent } : {}),
+      customer_email: opts.identity.email ?? null,
+      customer_name: opts.identity.displayName ?? null,
+      ...(opts.intent ? { last_intent: opts.intent } : {}),
       ...(opts.category ? { category: opts.category } : {}),
-    });
+    };
+
+    if (existing) {
+      const merged = [
+        ...(((existing.history as PersistMessage[]) ?? []) as PersistMessage[]),
+        ...stamped,
+      ];
+      const { error: updErr } = await db
+        .from("chat_conversations")
+        .update({
+          history: merged,
+          message_count: (existing.message_count ?? 0) + stamped.length,
+          metadata: meta,
+          customer_id: opts.identity.customer?.id ?? null,
+          user_id: opts.identity.profile?.id ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+      if (updErr) {
+        console.warn("[persistConversation] update failed:", updErr.message);
+      }
+    } else {
+      const { error: insErr } = await db.from("chat_conversations").insert({
+        phone,
+        channel: "whatsapp",
+        history: stamped,
+        message_count: stamped.length,
+        metadata: meta,
+        customer_id: opts.identity.customer?.id ?? null,
+        user_id: opts.identity.profile?.id ?? null,
+      });
+      if (insErr) {
+        console.warn("[persistConversation] insert failed:", insErr.message);
+      }
+    }
+  } catch (err) {
+    console.error("[persistConversation] unexpected error:", err);
   }
 }
 
@@ -76,16 +103,29 @@ export async function getMemoriesForCustomer(opts: {
   phone?: string | null;
   customerId?: string | null;
 }): Promise<AIMemory[]> {
-  if (!opts.email && !opts.phone && !opts.customerId) return [];
-  const db = gsgAdminDb();
-  const { data, error } = await db.rpc("get_ai_memories", {
-    p_customer_id: opts.customerId ?? null,
-    p_customer_email: opts.email ?? null,
-    p_customer_phone: opts.phone ?? null,
-  });
-  if (error || !data) return [];
-  // RPC returns jsonb array of {id, type, content, importance, created_at}
-  return (data as Array<{ content: string; importance: string }>).slice(0, 5);
+  if (!opts.phone && !opts.customerId && !opts.email) return [];
+  try {
+    const db = gsgAdminDb();
+    // Migration 001 defines get_ai_memories(p_phone text, p_limit int).
+    if (!opts.phone) return [];
+    const { data, error } = await db.rpc("get_ai_memories", {
+      p_phone: opts.phone,
+      p_limit: 5,
+    });
+    if (error || !data) return [];
+    return (
+      data as Array<{ content: string; importance: number | string }>
+    ).map((m) => ({
+      content: m.content,
+      importance:
+        typeof m.importance === "number"
+          ? String(m.importance)
+          : (m.importance ?? "normal"),
+    }));
+  } catch (err) {
+    console.warn("[getMemoriesForCustomer] failed:", err);
+    return [];
+  }
 }
 
 export async function saveMemory(opts: {
@@ -95,14 +135,27 @@ export async function saveMemory(opts: {
   memoryType?: string;
   expiresAt?: string | null;
 }): Promise<void> {
-  const db = gsgAdminDb();
-  await db.from("ai_memory").insert({
-    customer_id: opts.identity.customer?.id ?? null,
-    customer_email: opts.identity.email,
-    customer_phone: opts.identity.normalized.intl,
-    memory_type: opts.memoryType ?? "context",
-    content: opts.content,
-    importance: opts.importance ?? "normal",
-    expires_at: opts.expiresAt ?? null,
-  });
+  if (!opts.content?.trim()) return;
+  try {
+    const db = gsgAdminDb();
+    // Migration 001 defines ai_memory(phone, customer_id, category, content,
+    // importance int, metadata, expires_at).
+    const importanceMap: Record<string, number> = {
+      low: 3,
+      normal: 5,
+      high: 7,
+      critical: 9,
+    };
+    const { error } = await db.from("ai_memory").insert({
+      phone: opts.identity.normalized.intl,
+      customer_id: opts.identity.customer?.id ?? null,
+      category: opts.memoryType ?? "context",
+      content: opts.content,
+      importance: importanceMap[opts.importance ?? "normal"] ?? 5,
+      expires_at: opts.expiresAt ?? null,
+    });
+    if (error) console.warn("[saveMemory] failed:", error.message);
+  } catch (err) {
+    console.error("[saveMemory] unexpected error:", err);
+  }
 }

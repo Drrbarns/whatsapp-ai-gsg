@@ -138,7 +138,7 @@ export async function handleBrand(opts: {
     history: opts.history,
     tools: BRAND_TOOLS,
     executor,
-    temperature: 0.6,
+    temperature: 0.3,
     maxRounds: 3,
   });
 

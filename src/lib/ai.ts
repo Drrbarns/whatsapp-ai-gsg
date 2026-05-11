@@ -39,6 +39,34 @@ export type AIMessage = {
 const MAX_TOOL_ROUNDS = 4;
 const DEFAULT_MODEL = "openai/gpt-5";
 
+// User-facing fallback when we can't get a useful reply out of the LLM.
+// Always offers a human escape so customers aren't stuck.
+const HUMAN_FALLBACK =
+  "Sorry — having trouble on this side. Email info@gsgbrands.com.gh or call +233 24 603 3792 and a teammate will jump in. We'll be back to normal shortly.";
+
+/**
+ * Call the LLM once with auto-retry: if the first attempt fails, drop the
+ * last few turns from history (which may be poisoning the context — content
+ * filter triggers, malformed tool replies, etc.) and try once more before
+ * surrendering. Returns null on total failure.
+ */
+async function callWithRetry(
+  base: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  reduced: () => OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+): Promise<OpenAI.Chat.Completions.ChatCompletion | null> {
+  try {
+    return await openaiClient().chat.completions.create(base);
+  } catch (err) {
+    console.error("[ai] LLM call failed (attempt 1):", err);
+    try {
+      return await openaiClient().chat.completions.create(reduced());
+    } catch (err2) {
+      console.error("[ai] LLM call failed (attempt 2):", err2);
+      return null;
+    }
+  }
+}
+
 // Strip leaked reasoning that some models emit.
 function cleanReply(s: string): string {
   return (s || "")
@@ -83,23 +111,23 @@ export async function runAIWithTools(opts: {
   const toolCallNames: string[] = [];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    let completion: OpenAI.Chat.Completions.ChatCompletion;
-    try {
-      completion = await openaiClient().chat.completions.create({
-        model,
-        messages,
-        tools: GSG_TOOLS,
-        tool_choice: "auto",
-        temperature: 0.6,
-      });
-    } catch (err) {
-      console.error("[ai] LLM call failed:", err);
-      return {
-        reply:
-          "Sorry, I'm having a quick hiccup. Please try sending that again in a moment 🙏",
-        hints,
-        toolCallNames,
-      };
+    const base: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+      model,
+      messages,
+      tools: GSG_TOOLS,
+      tool_choice: "auto",
+      temperature: 0.4,
+    };
+    const completion = await callWithRetry(base, () => ({
+      ...base,
+      // Keep system prompt + last 4 turns only when retrying.
+      messages: [
+        messages[0],
+        ...messages.slice(-4),
+      ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    }));
+    if (!completion) {
+      return { reply: HUMAN_FALLBACK, hints, toolCallNames };
     }
 
     const choice = completion.choices[0]?.message;
@@ -188,23 +216,22 @@ export async function runAIWithGenericTools<H>(opts: {
   const toolCallNames: string[] = [];
 
   for (let round = 0; round < maxRounds; round++) {
-    let completion: OpenAI.Chat.Completions.ChatCompletion;
-    try {
-      completion = await openaiClient().chat.completions.create({
-        model,
-        messages,
-        tools: opts.tools,
-        tool_choice: "auto",
-        temperature: opts.temperature ?? 0.5,
-      });
-    } catch (err) {
-      console.error("[ai/generic] LLM call failed:", err);
-      return {
-        reply:
-          "Sorry, I'm having a quick hiccup. Please try sending that again in a moment 🙏",
-        hints,
-        toolCallNames,
-      };
+    const base: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+      model,
+      messages,
+      tools: opts.tools,
+      tool_choice: "auto",
+      temperature: opts.temperature ?? 0.4,
+    };
+    const completion = await callWithRetry(base, () => ({
+      ...base,
+      messages: [
+        messages[0],
+        ...messages.slice(-4),
+      ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+    }));
+    if (!completion) {
+      return { reply: HUMAN_FALLBACK, hints, toolCallNames };
     }
 
     const choice = completion.choices[0]?.message;
@@ -273,19 +300,19 @@ export async function runAIPlain(opts: {
     })) as OpenAI.Chat.Completions.ChatCompletionMessageParam[]),
   ];
 
-  try {
-    const completion = await openaiClient().chat.completions.create({
-      model,
-      messages,
-      temperature: opts.temperature ?? 0.6,
-    });
-    const raw = completion.choices[0]?.message?.content || "";
-    return { reply: cleanReply(raw) || "Got it 👍" };
-  } catch (err) {
-    console.error("[ai/plain] LLM call failed:", err);
-    return {
-      reply:
-        "Sorry, I'm having a quick hiccup. Please try sending that again in a moment 🙏",
-    };
-  }
+  const base: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+    model,
+    messages,
+    temperature: opts.temperature ?? 0.5,
+  };
+  const completion = await callWithRetry(base, () => ({
+    ...base,
+    messages: [
+      messages[0],
+      ...messages.slice(-4),
+    ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+  }));
+  if (!completion) return { reply: HUMAN_FALLBACK };
+  const raw = completion.choices[0]?.message?.content || "";
+  return { reply: cleanReply(raw) || "Got it 👍" };
 }

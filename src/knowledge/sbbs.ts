@@ -29,7 +29,7 @@ export const SBBS_CONTACTS = {
 
 export const SBBS_KNOWLEDGE = `## Sell-Safe Buy-Safe (SBBS) — what it actually is
 
-SBBS is GSG Brands' escrow service for transactions in Ghana. The buyer pays SBBS — NOT the seller. We hold the money with a licensed payment provider (Paystack / Hubtel / Moolre / Flutterwave). The seller ships the goods. The buyer inspects them. ONLY when the buyer confirms (with a release code) — or 72 hours pass — do we release payment to the seller. If anything goes wrong, either party can open a dispute and a human at GSG arbitrates. We protect everybody.
+SBBS is GSG Brands' escrow service for transactions in Ghana. The buyer pays SBBS — NOT the seller. We hold the money with a licensed payment provider (Paystack / Hubtel / Moolre / Flutterwave). The seller ships the goods. The buyer inspects them. ONLY when the buyer confirms (with a release code) — or the auto-release window (about 24 hours after delivery) elapses — do we release payment to the seller. If anything goes wrong, either party can open a dispute and a human at GSG arbitrates. We protect everybody.
 
 WHO IT'S FOR
 - Buyers and sellers transacting on Instagram, WhatsApp, Facebook, Telegram, X, or any marketplace where there's no built-in escrow.
