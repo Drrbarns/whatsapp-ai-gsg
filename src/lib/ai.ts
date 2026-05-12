@@ -41,6 +41,13 @@ const MAX_TOOL_ROUNDS = 4;
 // you have a paid model you'd rather use.
 const DEFAULT_MODEL = "minimax/minimax-m2.5:free";
 
+// Cap output length. WhatsApp replies are 1–4 sentences; 1024 tokens is
+// far more than we need. This is also load-bearing on OpenRouter's free
+// tier — if we don't set it, OR uses the model's full output ceiling
+// (e.g. 16384 for minimax m2.5) and rejects with a 402 the moment our
+// remaining credits dip below that ceiling.
+const MAX_OUTPUT_TOKENS = 1024;
+
 // User-facing fallback when we can't get a useful reply out of the LLM.
 // Always offers a human escape so customers aren't stuck.
 const HUMAN_FALLBACK =
@@ -119,6 +126,7 @@ export async function runAIWithTools(opts: {
       tools: GSG_TOOLS,
       tool_choice: "auto",
       temperature: 0.4,
+      max_tokens: MAX_OUTPUT_TOKENS,
     };
     const completion = await callWithRetry(base, () => ({
       ...base,
@@ -224,6 +232,7 @@ export async function runAIWithGenericTools<H>(opts: {
       tools: opts.tools,
       tool_choice: "auto",
       temperature: opts.temperature ?? 0.4,
+      max_tokens: MAX_OUTPUT_TOKENS,
     };
     const completion = await callWithRetry(base, () => ({
       ...base,
@@ -306,6 +315,7 @@ export async function runAIPlain(opts: {
     model,
     messages,
     temperature: opts.temperature ?? 0.5,
+    max_tokens: MAX_OUTPUT_TOKENS,
   };
   const completion = await callWithRetry(base, () => ({
     ...base,
