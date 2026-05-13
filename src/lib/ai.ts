@@ -37,15 +37,14 @@ export type AIMessage = {
 };
 
 const MAX_TOOL_ROUNDS = 4;
-// Free OpenRouter tier — MiniMax M2.5. Override via AI_MODEL env var if
-// you have a paid model you'd rather use.
-const DEFAULT_MODEL = "minimax/minimax-m2.5:free";
+// OpenAI GPT-4o mini via OpenRouter — best price/quality for retail chat.
+// Override via AI_MODEL env var if you ever want to A/B another model.
+const DEFAULT_MODEL = "openai/gpt-4o-mini";
 
 // Cap output length. WhatsApp replies are 1–4 sentences; 1024 tokens is
-// far more than we need. This is also load-bearing on OpenRouter's free
-// tier — if we don't set it, OR uses the model's full output ceiling
-// (e.g. 16384 for minimax m2.5) and rejects with a 402 the moment our
-// remaining credits dip below that ceiling.
+// far more than we need. Also defends OpenRouter spend — without it, OR
+// reserves the model's full output ceiling (e.g. 16k tokens) and 402s
+// the moment your credit drops below that ceiling.
 const MAX_OUTPUT_TOKENS = 1024;
 
 // User-facing fallback when we can't get a useful reply out of the LLM.
