@@ -52,22 +52,31 @@ const MAX_OUTPUT_TOKENS = 1024;
 const HUMAN_FALLBACK =
   "Sorry — having trouble on this side. Email info@gsgbrands.com.gh or call +233 24 603 3792 and a teammate will jump in. We'll be back to normal shortly.";
 
+// Hard ceiling on a single LLM round-trip. GPT-4o-mini normally responds in
+// 1.5–4s; anything past 12s is the upstream provider hanging and we'd rather
+// kill it and retry with a reduced history than wait the full Vercel budget.
+const LLM_TIMEOUT_MS = 12_000;
+
 /**
- * Call the LLM once with auto-retry: if the first attempt fails, drop the
- * last few turns from history (which may be poisoning the context — content
- * filter triggers, malformed tool replies, etc.) and try once more before
- * surrendering. Returns null on total failure.
+ * Call the LLM once with hard timeout + auto-retry. On timeout or failure
+ * (network blip, content filter trigger, malformed tool reply, 5xx), drop
+ * the last few turns from history (likely poisoning the context) and try
+ * once more. Returns null on total failure.
  */
 async function callWithRetry(
   base: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
   reduced: () => OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
 ): Promise<OpenAI.Chat.Completions.ChatCompletion | null> {
   try {
-    return await openaiClient().chat.completions.create(base);
+    return await openaiClient().chat.completions.create(base, {
+      timeout: LLM_TIMEOUT_MS,
+    });
   } catch (err) {
     console.error("[ai] LLM call failed (attempt 1):", err);
     try {
-      return await openaiClient().chat.completions.create(reduced());
+      return await openaiClient().chat.completions.create(reduced(), {
+        timeout: LLM_TIMEOUT_MS,
+      });
     } catch (err2) {
       console.error("[ai] LLM call failed (attempt 2):", err2);
       return null;

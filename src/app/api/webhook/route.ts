@@ -14,7 +14,7 @@
 //  10. Persist the new turn to GSG chat_conversations
 // ============================================================================
 
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { randomUUID } from "node:crypto";
 import { supabase } from "@/lib/supabase";
 import {
@@ -305,7 +305,8 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: "duplicate" });
     }
 
-    await supabase
+    // Fire-and-forget — cosmetic dashboard write, no need to gate the LLM.
+    void supabase
       .from("conversations")
       .update({
         updated_at: new Date().toISOString(),
@@ -369,8 +370,8 @@ export async function POST(request: NextRequest) {
     );
 
     // ─── 4.6) First-contact welcome — once per phone number ever.
-    // Sent BEFORE the AI runs so the customer gets an instant friendly ack
-    // while the AI computes a real reply.
+    // Fired in parallel with the LLM (NOT awaited). Customer sees the
+    // welcome ack within ~500ms; the real reply lands a beat after.
     if (isFirstContact) {
       const firstName =
         identity?.displayName?.split(" ")[0] ||
@@ -379,35 +380,29 @@ export async function POST(request: NextRequest) {
       const greeting = firstName ? `Hey ${firstName}!` : "Hey there!";
       const welcomeText = `${greeting} 👋 Welcome to GSG Brands. One sec while we look at your message...`;
 
-      try {
-        const sent = await sendWhatsAppMessage(phone, welcomeText);
-        if (sent.messages?.[0]?.id) {
-          await supabase.from("messages").insert({
-            conversation_id: conversation.id,
-            role: "assistant",
-            content: welcomeText,
-            whatsapp_msg_id: sent.messages[0].id,
-            status: "sent",
-          });
-          await supabase
-            .from("conversations")
-            .update({
-              updated_at: new Date().toISOString(),
-              last_message_preview: welcomeText.slice(0, 100),
-              last_message_type: "text",
-            })
-            .eq("id", conversation.id);
-          console.log(`[webhook] sent welcome to ${phone}`);
-        } else if (sent.error) {
-          console.warn("[webhook] welcome send failed:", sent.error);
+      void (async () => {
+        try {
+          const sent = await sendWhatsAppMessage(phone, welcomeText);
+          if (sent.messages?.[0]?.id) {
+            await supabase.from("messages").insert({
+              conversation_id: conversation.id,
+              role: "assistant",
+              content: welcomeText,
+              whatsapp_msg_id: sent.messages[0].id,
+              status: "sent",
+            });
+            console.log(`[webhook] sent welcome to ${phone}`);
+          } else if (sent.error) {
+            console.warn("[webhook] welcome send failed:", sent.error);
+          }
+        } catch (err) {
+          console.error("[webhook] welcome threw:", err);
         }
-      } catch (err) {
-        console.error("[webhook] welcome threw:", err);
-      }
+      })();
     }
 
-    // ─── 5) Dashboard typing indicator ON + fetch chat history from GSG storefront
-    await supabase
+    // Dashboard typing indicator — fire-and-forget. Cosmetic, doesn't gate LLM.
+    void supabase
       .from("conversations")
       .update({ is_typing: true })
       .eq("id", conversation.id);
@@ -527,67 +522,76 @@ export async function POST(request: NextRequest) {
         `[webhook] context=${targetContext} tools=[${aiToolNames.join(",")}] reply_len=${aiReply.length}`
       );
     } finally {
-      await supabase
+      // Cosmetic dashboard flip — fire-and-forget.
+      void supabase
         .from("conversations")
         .update({ is_typing: false })
         .eq("id", conversation.id);
     }
 
-    // ─── 8) Send the AI's text reply
+    // ─── 8) Send the AI's text reply (the only remaining gate before the
+    // customer sees a reply, so we MUST await it).
     const waResp = await sendWhatsAppMessage(phone, aiReply);
     const waMsgId = waResp.messages?.[0]?.id ?? null;
     const sendError = waResp.error;
     const sendStatus: "sent" | "failed" = waMsgId ? "sent" : "failed";
 
-    await supabase.from("messages").insert({
-      conversation_id: conversation.id,
-      role: "assistant",
-      content: sendError
-        ? `${aiReply}\n\n[meta error: ${sendError.code} ${sendError.message}]`
-        : aiReply,
-      whatsapp_msg_id: waMsgId,
-      status: sendStatus,
-    });
-
-    // ─── 9) Render any context-specific follow-ups (product cards / brand CTAs / etc.)
-    if (sendStatus === "sent") {
+    // ─── Everything below runs AFTER we ack Meta. after() keeps the function
+    // alive on Vercel so dashboard writes + persistence + interactive
+    // follow-ups land in the background without delaying the customer.
+    after(async () => {
       try {
-        await renderFollowups();
+        await supabase.from("messages").insert({
+          conversation_id: conversation.id,
+          role: "assistant",
+          content: sendError
+            ? `${aiReply}\n\n[meta error: ${sendError.code} ${sendError.message}]`
+            : aiReply,
+          whatsapp_msg_id: waMsgId,
+          status: sendStatus,
+        });
+
+        if (sendStatus === "sent") {
+          try {
+            await renderFollowups();
+          } catch (err) {
+            console.error("[webhook] context render failed (non-fatal):", err);
+          }
+        }
+
+        try {
+          const userTextForLog =
+            typeof aiUserContent === "string"
+              ? aiUserContent
+              : aiUserContent
+                  .map((p) => (p.type === "text" ? p.text : "[image]"))
+                  .join(" ");
+
+          await persistConversation({
+            sessionId: phone,
+            identity,
+            newMessages: [
+              { role: "user", content: userTextForLog },
+              { role: "assistant", content: aiReply },
+            ],
+            intent: aiToolNames[0] ?? undefined,
+          });
+        } catch (err) {
+          console.error("[webhook] persistConversation failed (non-fatal):", err);
+        }
+
+        await supabase
+          .from("conversations")
+          .update({
+            updated_at: new Date().toISOString(),
+            last_message_preview: aiReply,
+            last_message_type: "text",
+          })
+          .eq("id", conversation.id);
       } catch (err) {
-        console.error("[webhook] context render failed (non-fatal):", err);
+        console.error("[webhook] after-response work failed:", err);
       }
-    }
-
-    // ─── 10) Persist this turn to GSG chat_conversations
-    try {
-      const userTextForLog =
-        typeof aiUserContent === "string"
-          ? aiUserContent
-          : aiUserContent
-              .map((p) => (p.type === "text" ? p.text : "[image]"))
-              .join(" ");
-
-      await persistConversation({
-        sessionId: phone,
-        identity,
-        newMessages: [
-          { role: "user", content: userTextForLog },
-          { role: "assistant", content: aiReply },
-        ],
-        intent: aiToolNames[0] ?? undefined,
-      });
-    } catch (err) {
-      console.error("[webhook] persistConversation failed (non-fatal):", err);
-    }
-
-    await supabase
-      .from("conversations")
-      .update({
-        updated_at: new Date().toISOString(),
-        last_message_preview: aiReply,
-        last_message_type: "text",
-      })
-      .eq("id", conversation.id);
+    });
 
     return Response.json({
       status: sendStatus === "sent" ? "replied" : "send_failed",
