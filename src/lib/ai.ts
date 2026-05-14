@@ -43,15 +43,10 @@ const MAX_TOOL_ROUNDS = 2;
 // Override via AI_MODEL env var if you ever want to A/B another model.
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 
-// Force OpenRouter to route to OpenAI's API first. Without this, OR can
-// pick whichever upstream is cheapest — sometimes Azure, which has been
-// slow (5–10s per "hello") for gpt-4o-mini. Pinning to OpenAI cuts a
-// typical reply from ~8s to ~2s. allow_fallbacks: true keeps us covered
-// if OpenAI rate-limits or errors.
-const PROVIDER_PREFERENCE = {
-  order: ["OpenAI"],
-  allow_fallbacks: true,
-};
+// Note: tried pinning provider to OpenAI to dodge slow Azure routing, but
+// that triggered "429 Provider returned error" on every first attempt
+// (OpenRouter→OpenAI tier is throttled). Letting OR pick the upstream
+// avoids the 429+retry penalty.
 
 // Cap output length. WhatsApp replies are 1–4 sentences; 1024 tokens is
 // far more than we need. Also defends OpenRouter spend — without it, OR
@@ -147,9 +142,7 @@ export async function runAIWithTools(opts: {
       tool_choice: "auto",
       temperature: 0.4,
       max_tokens: MAX_OUTPUT_TOKENS,
-      // Pin to OpenAI's fast endpoint via OpenRouter routing.
-      ...({ provider: PROVIDER_PREFERENCE } as Record<string, unknown>),
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+    };
     const tStart = Date.now();
     const completion = await callWithRetry(base, () => ({
       ...base,
@@ -257,8 +250,7 @@ export async function runAIWithGenericTools<H>(opts: {
       tool_choice: "auto",
       temperature: opts.temperature ?? 0.4,
       max_tokens: MAX_OUTPUT_TOKENS,
-      ...({ provider: PROVIDER_PREFERENCE } as Record<string, unknown>),
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+    };
     const tStart = Date.now();
     const completion = await callWithRetry(base, () => ({
       ...base,
@@ -343,8 +335,7 @@ export async function runAIPlain(opts: {
     messages,
     temperature: opts.temperature ?? 0.5,
     max_tokens: MAX_OUTPUT_TOKENS,
-    ...({ provider: PROVIDER_PREFERENCE } as Record<string, unknown>),
-  } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+  };
   const tStart = Date.now();
   const completion = await callWithRetry(base, () => ({
     ...base,
