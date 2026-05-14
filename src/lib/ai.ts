@@ -36,10 +36,22 @@ export type AIMessage = {
   content: string | AIContentPart[];
 };
 
-const MAX_TOOL_ROUNDS = 4;
+// 2 rounds is plenty for retail chat — past that the model is almost
+// always stuck. Halves the worst-case latency vs the previous 4.
+const MAX_TOOL_ROUNDS = 2;
 // OpenAI GPT-4o mini via OpenRouter — best price/quality for retail chat.
 // Override via AI_MODEL env var if you ever want to A/B another model.
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
+
+// Force OpenRouter to route to OpenAI's API first. Without this, OR can
+// pick whichever upstream is cheapest — sometimes Azure, which has been
+// slow (5–10s per "hello") for gpt-4o-mini. Pinning to OpenAI cuts a
+// typical reply from ~8s to ~2s. allow_fallbacks: true keeps us covered
+// if OpenAI rate-limits or errors.
+const PROVIDER_PREFERENCE = {
+  order: ["OpenAI"],
+  allow_fallbacks: true,
+};
 
 // Cap output length. WhatsApp replies are 1–4 sentences; 1024 tokens is
 // far more than we need. Also defends OpenRouter spend — without it, OR
@@ -135,7 +147,10 @@ export async function runAIWithTools(opts: {
       tool_choice: "auto",
       temperature: 0.4,
       max_tokens: MAX_OUTPUT_TOKENS,
-    };
+      // Pin to OpenAI's fast endpoint via OpenRouter routing.
+      ...({ provider: PROVIDER_PREFERENCE } as Record<string, unknown>),
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+    const tStart = Date.now();
     const completion = await callWithRetry(base, () => ({
       ...base,
       // Keep system prompt + last 4 turns only when retrying.
@@ -144,6 +159,7 @@ export async function runAIWithTools(opts: {
         ...messages.slice(-4),
       ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     }));
+    console.log(`[ai] tools-round ${round} llm took ${Date.now() - tStart}ms`);
     if (!completion) {
       return { reply: HUMAN_FALLBACK, hints, toolCallNames };
     }
@@ -241,7 +257,9 @@ export async function runAIWithGenericTools<H>(opts: {
       tool_choice: "auto",
       temperature: opts.temperature ?? 0.4,
       max_tokens: MAX_OUTPUT_TOKENS,
-    };
+      ...({ provider: PROVIDER_PREFERENCE } as Record<string, unknown>),
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+    const tStart = Date.now();
     const completion = await callWithRetry(base, () => ({
       ...base,
       messages: [
@@ -249,6 +267,7 @@ export async function runAIWithGenericTools<H>(opts: {
         ...messages.slice(-4),
       ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
     }));
+    console.log(`[ai] generic-tools round ${round} llm took ${Date.now() - tStart}ms`);
     if (!completion) {
       return { reply: HUMAN_FALLBACK, hints, toolCallNames };
     }
@@ -324,7 +343,9 @@ export async function runAIPlain(opts: {
     messages,
     temperature: opts.temperature ?? 0.5,
     max_tokens: MAX_OUTPUT_TOKENS,
-  };
+    ...({ provider: PROVIDER_PREFERENCE } as Record<string, unknown>),
+  } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+  const tStart = Date.now();
   const completion = await callWithRetry(base, () => ({
     ...base,
     messages: [
@@ -332,6 +353,7 @@ export async function runAIPlain(opts: {
       ...messages.slice(-4),
     ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
   }));
+  console.log(`[ai] plain llm took ${Date.now() - tStart}ms`);
   if (!completion) return { reply: HUMAN_FALLBACK };
   const raw = completion.choices[0]?.message?.content || "";
   return { reply: cleanReply(raw) || "Got it 👍" };
